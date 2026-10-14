@@ -18,6 +18,20 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Each admin owns a separate hostel workspace. Staff accounts created by an admin share only that admin's workspace; separate admin accounts cannot see each other's residents, rooms, documents, or audit history. On upgrade, existing data stays together under the current primary admin. To create additional independent owners, use `python -m app.manage create-admin`. To create a warden from the trusted host when there is more than one owner, specify `--owner ADMIN_USERNAME`.
 
+## Employer and owner portals
+
+The public landing page links to separate Employer and Hostel Owner portals. Bootstrap a developer account from a trusted terminal with `python -m app.manage create-platform-admin`; developer accounts use separate sessions from hostel staff. Developers register owners/hostels and configure floors and 1–4-bed rooms. Existing hostel owner accounts remain tenant-scoped and can view the layout, register residents, update resident payment status, and check residents out, but cannot change rooms or floors.
+
+The employer dashboard tracks platform subscription invoices by owner and billing month, including pending and received amounts. Resident payment counts and balances remain owner-scoped in the Hostel Owner dashboard. Subscription invoices are recorded manually by an employer; recording one does not initiate a payment transaction.
+
+New admin and staff passwords must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character. This applies to dashboard signup, staff creation, and CLI password creation or reset; existing passwords remain valid for sign-in.
+
+## WhatsApp bookings and vacancy QR
+
+Set `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, and `WHATSAPP_BUSINESS_NUMBER` in the local `.env` and the Vercel project environment. Configure the Meta WhatsApp webhook callback as `https://YOUR_DOMAIN/api/webhook/whatsapp` and subscribe it to message events. Keep all tokens and secrets server-side. The webhook validates Meta's `X-Hub-Signature-256` before processing messages.
+
+Set monthly room rents in **Rooms** before using budget-based matching; legacy rooms migrate with an unset rent of zero. The owner dashboard's **Vacancy QR** page generates a hostel-specific WhatsApp link on demand. Its PNG is streamed from `/api/qr/{hostel_id}` and downloaded from the dashboard rather than written into the deployed filesystem, which is ephemeral on Vercel. The QR route requires an authenticated admin session.
+
 On upgrade from the original fixed-room version, the app migrates the existing rooms 101–108 to `Hostel 1`, `1st Floor`, with four beds each. Existing resident room and bed assignments are preserved. After upgrade, use **Rooms → Add hostel → Add floor → Add room** to configure additional properties and capacities. Admins can delete vacant rooms or hostels. Rooms with current residents cannot be deleted; hostels with checked-in residents cannot be deleted. Deletion removes them from active availability while retaining past stay/audit history.
 
 Admins can read the audit log and manage staff. Admins and wardens can manage resident stays and payments. The API rejects writes without the session CSRF token; session cookies are HTTP-only and SameSite=Strict. Login failures are rate-limited and recorded without passwords.

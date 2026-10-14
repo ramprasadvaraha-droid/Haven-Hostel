@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import string
 
 from argon2 import PasswordHasher
 from cryptography.fernet import Fernet, InvalidToken
@@ -8,6 +9,18 @@ from cryptography.fernet import Fernet, InvalidToken
 from app.config import encryption_key
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
+
+
+def password_policy_error(password: str) -> str | None:
+    if (
+        len(password) < 8
+        or not any(character.islower() for character in password)
+        or not any(character.isupper() for character in password)
+        or not any(character.isdigit() for character in password)
+        or not any(character in string.punctuation for character in password)
+    ):
+        return "Password must be at least 8 characters and include an uppercase letter, lowercase letter, number, and special character."
+    return None
 
 
 def encrypt_bytes(value: bytes) -> bytes:

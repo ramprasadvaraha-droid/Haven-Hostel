@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app import database
-from app.security import hash_password
+from app.security import hash_password, password_policy_error
 
 
 def create_user(role: str, owner_username: str | None = None) -> None:
@@ -14,10 +14,13 @@ def create_user(role: str, owner_username: str | None = None) -> None:
     username = input("Staff username: ").strip()
     if not re.fullmatch(r"[A-Za-z0-9._-]{3,40}", username):
         raise SystemExit("Use 3-40 letters, numbers, dots, underscores, or hyphens for the username.")
-    password = getpass.getpass("Password (12+ characters): ")
+    password = getpass.getpass("Password (8+ characters with upper/lowercase, number, and special character): ")
     confirmation = getpass.getpass("Confirm password: ")
-    if len(password) < 12 or password != confirmation:
-        raise SystemExit("Passwords must match and contain at least 12 characters.")
+    if password != confirmation:
+        raise SystemExit("Passwords must match.")
+    policy_error = password_policy_error(password)
+    if policy_error:
+        raise SystemExit(policy_error)
 
     staff_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
@@ -63,10 +66,13 @@ def reset_password(username: str) -> None:
     database.initialize_database()
     if not re.fullmatch(r"[A-Za-z0-9._-]{3,40}", username):
         raise SystemExit("Use 3-40 letters, numbers, dots, underscores, or hyphens for the username.")
-    password = getpass.getpass("New password (12+ characters): ")
+    password = getpass.getpass("New password (8+ characters with upper/lowercase, number, and special character): ")
     confirmation = getpass.getpass("Confirm new password: ")
-    if len(password) < 12 or password != confirmation:
-        raise SystemExit("Passwords must match and contain at least 12 characters.")
+    if password != confirmation:
+        raise SystemExit("Passwords must match.")
+    policy_error = password_policy_error(password)
+    if policy_error:
+        raise SystemExit(policy_error)
 
     password_hash = hash_password(password)
     with database.transaction() as connection:
@@ -86,13 +92,53 @@ def reset_password(username: str) -> None:
     print(f"Password reset for staff account: {username}")
 
 
+def create_platform_admin() -> None:
+    database.initialize_database()
+    username = input("Developer username: ").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{3,40}", username):
+        raise SystemExit("Use 3-40 letters, numbers, dots, underscores, or hyphens for the username.")
+    password = getpass.getpass("Password (8+ characters with upper/lowercase, number, and special character): ")
+    confirmation = getpass.getpass("Confirm password: ")
+    if password != confirmation:
+        raise SystemExit("Passwords must match.")
+    policy_error = password_policy_error(password)
+    if policy_error:
+        raise SystemExit(policy_error)
+
+    account_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO platform_accounts (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                (account_id, username, hash_password(password), now),
+            )
+            database.write_audit(
+                connection,
+                None,
+                "platform.account_create",
+                "platform_account",
+                account_id,
+                {"username": username},
+            )
+    except sqlite3.IntegrityError as error:
+        raise SystemExit("That developer username already exists.") from error
+    print(f"Created developer account: {username}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage Haven Hostel staff accounts.")
-    parser.add_argument("command", choices=["create-admin", "create-warden", "create-staff", "reset-password"])
+    parser.add_argument(
+        "command",
+        choices=["create-admin", "create-warden", "create-staff", "reset-password", "create-platform-admin"],
+    )
     parser.add_argument("--role", choices=["admin", "warden"], default="warden")
     parser.add_argument("--owner", help="Admin username whose data this staff account will access")
     parser.add_argument("--username", help="Staff username to reset")
     arguments = parser.parse_args()
+    if arguments.command == "create-platform-admin":
+        create_platform_admin()
+        return
     if arguments.command == "reset-password":
         username = arguments.username or input("Staff username: ").strip()
         reset_password(username)

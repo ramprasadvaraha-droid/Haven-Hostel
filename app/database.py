@@ -26,6 +26,35 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS platform_accounts (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS platform_sessions (
+    token_hash TEXT PRIMARY KEY,
+    csrf_token TEXT NOT NULL,
+    account_id TEXT NOT NULL REFERENCES platform_accounts(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS subscription_payments (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES staff(id),
+    billing_period TEXT NOT NULL,
+    amount_paise INTEGER NOT NULL CHECK (amount_paise > 0),
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'received')),
+    received_at TEXT,
+    received_by TEXT REFERENCES platform_accounts(id),
+    created_by TEXT NOT NULL REFERENCES platform_accounts(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (owner_id, billing_period)
+);
+CREATE INDEX IF NOT EXISTS subscription_status_due ON subscription_payments(status, due_date);
 CREATE TABLE IF NOT EXISTS hostels (
     id TEXT PRIMARY KEY,
     owner_id TEXT REFERENCES staff(id),
@@ -46,9 +75,17 @@ CREATE TABLE IF NOT EXISTS rooms (
     floor_id TEXT NOT NULL REFERENCES floors(id) ON DELETE CASCADE,
     room_number TEXT NOT NULL,
     share_count INTEGER NOT NULL CHECK (share_count BETWEEN 1 AND 20),
+    monthly_rent_paise INTEGER NOT NULL DEFAULT 0 CHECK (monthly_rent_paise >= 0),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     created_at TEXT NOT NULL,
     UNIQUE (floor_id, room_number)
+);
+CREATE TABLE IF NOT EXISTS room_type_charges (
+    hostel_id TEXT NOT NULL REFERENCES hostels(id) ON DELETE CASCADE,
+    share_count INTEGER NOT NULL CHECK (share_count BETWEEN 1 AND 4),
+    monthly_rent_paise INTEGER NOT NULL CHECK (monthly_rent_paise >= 0),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (hostel_id, share_count)
 );
 CREATE TABLE IF NOT EXISTS residents (
     id TEXT PRIMARY KEY,
@@ -67,6 +104,32 @@ CREATE TABLE IF NOT EXISTS residents (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS active_bed_assignment
 ON residents(room_id, bed_number) WHERE checked_out_at IS NULL;
+CREATE TABLE IF NOT EXISTS bookings (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL REFERENCES staff(id),
+    hostel_id TEXT NOT NULL REFERENCES hostels(id),
+    student_name TEXT,
+    phone TEXT NOT NULL,
+    phone_hash TEXT NOT NULL,
+    sharing_needed INTEGER CHECK (sharing_needed BETWEEN 1 AND 20),
+    budget INTEGER CHECK (budget >= 0),
+    status TEXT NOT NULL CHECK (status IN ('enquiry', 'visit_booked', 'joined')),
+    visit_time TEXT,
+    room_id_reserved TEXT REFERENCES rooms(id),
+    reservation_expires_at TEXT,
+    language TEXT NOT NULL DEFAULT 'en',
+    cancelled_at TEXT,
+    resident_id TEXT REFERENCES residents(id),
+    created_by TEXT REFERENCES staff(id),
+    confirmed_by TEXT REFERENCES staff(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS booking_owner_status ON bookings(owner_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS booking_room_reservation ON bookings(room_id_reserved, reservation_expires_at);
+CREATE INDEX IF NOT EXISTS booking_phone_lookup ON bookings(phone_hash, hostel_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS active_room_reservation ON bookings(room_id_reserved)
+WHERE status = 'visit_booked' AND cancelled_at IS NULL;
 CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
     resident_id TEXT NOT NULL REFERENCES residents(id),
@@ -95,6 +158,7 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 );
 CREATE INDEX IF NOT EXISTS login_attempt_lookup
 ON login_attempts(username, address_hash, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS platform_session_expiry ON platform_sessions(expires_at);
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL
@@ -229,7 +293,10 @@ def initialize_database() -> None:
             )
             connection.execute("CREATE INDEX IF NOT EXISTS staff_owner_id ON staff(owner_id)")
             connection.execute("CREATE INDEX IF NOT EXISTS hostels_owner_id ON hostels(owner_id)")
-            for version in (1, 2, 3, 4):
+            connection.execute(
+                "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS monthly_rent_paise INTEGER NOT NULL DEFAULT 0"
+            )
+            for version in (1, 2, 3, 4, 5, 6):
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?) ON CONFLICT DO NOTHING",
                     (version, now),
@@ -364,6 +431,27 @@ def initialize_database() -> None:
                 connection.execute("CREATE INDEX IF NOT EXISTS hostels_owner_id ON hostels(owner_id)")
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (4, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_five = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 5"
+            ).fetchone()
+            if not migration_five:
+                if "monthly_rent_paise" not in room_columns:
+                    connection.execute(
+                        "ALTER TABLE rooms ADD COLUMN monthly_rent_paise INTEGER NOT NULL DEFAULT 0 "
+                        "CHECK (monthly_rent_paise >= 0)"
+                    )
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (5, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_six = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 6"
+            ).fetchone()
+            if not migration_six:
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (6, ?)",
                     (datetime.now(timezone.utc).isoformat(),),
                 )
             connection.commit()

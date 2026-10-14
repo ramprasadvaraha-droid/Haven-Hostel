@@ -7,3 +7,4 @@ argon2-cffi==23.1.0
 python-dotenv==1.1.0
 httpx==0.28.1
 pytest==8.3.5
+qrcode[pil]==8.2
