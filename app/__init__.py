@@ -1,0 +1,1 @@
+"""Haven Hostel application package."""

@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f4ef">
+  <title>Haven Hostel | Resident desk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f4f4ef;
+      --white: #fff;
+      --ink: #202722;
+      --muted: #777e77;
+      --line: #e6e8e1;
+      --green: #2e604a;
+      --green-dark: #204535;
+      --mint: #e8f0e9;
+      --orange: #d96e4c;
+      --orange-light: #fbede7;
+      --serif: Georgia, 'Times New Roman', serif;
+      --sans: 'DM Sans', 'Segoe UI', sans-serif;
+      --display: 'Manrope', 'Segoe UI', sans-serif;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 14px; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 232px minmax(0, 1fr); }
+    .login-screen { min-height: 100vh; padding: 24px; display: grid; place-items: center; background: radial-gradient(ellipse at 15% 85%, #e1e9e0 0, transparent 42%), var(--paper); }
+    .login-panel { width: min(100%, 390px); padding: 31px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); box-shadow: 0 15px 40px #28392b0a; }
+    .login-brand { display: flex; align-items: center; gap: 11px; margin-bottom: 32px; }
+    .login-kicker { margin: 0 0 8px; color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; }
+    .login-panel h1 { font-size: 29px; }
+    .login-copy { margin: 8px 0 23px; color: var(--muted); font-size: 12px; }
+    .credentials-note { margin: 14px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .login-field { margin-top: 15px; }
+    .login-field label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; }
+    .login-field input { width: 100%; height: 41px; padding: 0 11px; border: 1px solid #dfe2da; border-radius: 5px; background: white; font-size: 12px; }
+    .setup-note { margin: 13px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .login-submit { width: 100%; margin-top: 21px; }
+    .login-error { margin: 12px 0 0; color: #a43f2e; font-size: 11px; }
+    .staff-identity { color: var(--muted); font-size: 10px; text-align: right; }
+    .logout-button { min-height: 32px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; color: #60675f; background: white; font-size: 10px; font-weight: 600; }
+    .logout-button:hover { background: #f1f2ed; }
+    .sidebar { padding: 28px 18px 20px; display: flex; flex-direction: column; background: #fbfbf8; border-right: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 0 9px; margin-bottom: 48px; }
+    .brand-mark { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: white; background: var(--green); }
+    .brand-name { font: 800 16px var(--display); letter-spacing: -.4px; }
+    .brand-sub { margin-top: 1px; color: var(--muted); font-size: 11px; }
+    .nav-label { padding: 0 11px; margin-bottom: 10px; color: #969b94; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; }
+    .nav { display: grid; gap: 4px; }
+    .nav-button { width: 100%; border: 0; padding: 11px; display: flex; align-items: center; gap: 12px; border-radius: 7px; color: #747a74; text-align: left; background: transparent; font-weight: 600; }
+    .nav-button:hover { background: #f0f1eb; }
+    .nav-button.active { background: var(--mint); color: var(--green-dark); }
+    .nav-button svg { width: 18px; height: 18px; flex: 0 0 auto; }
+    .side-note { margin-top: auto; border-top: 1px solid var(--line); padding: 17px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .side-note strong { display: block; color: var(--ink); font-size: 12px; }
+    main { min-width: 0; padding: 30px clamp(20px, 4vw, 56px) 48px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 33px; }
+    .crumb { color: var(--muted); font-size: 12px; }
+    .top-right { display: flex; align-items: center; gap: 12px; }
+    .privacy-chip { display: inline-flex; align-items: center; gap: 7px; color: #55715d; font-size: 11px; font-weight: 600; }
+    .privacy-chip svg { width: 15px; height: 15px; }
+    .avatar { width: 33px; height: 33px; display: grid; place-items: center; border-radius: 50%; background: #e9ddd0; color: #664c37; font-size: 11px; font-weight: 700; }
+    .heading-row { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+    .eyebrow { margin: 0 0 8px; color: var(--green); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.4px; }
+    h1 { margin: 0; font: 500 clamp(29px, 3vw, 38px)/1.1 var(--serif); letter-spacing: -.6px; }
+    .date { margin-top: 9px; color: var(--muted); font-size: 12px; }
+    .primary-button { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; border: 0; border-radius: 6px; color: white; background: var(--green); font-weight: 700; font-size: 12px; transition: background .18s, transform .18s; }
+    .primary-button:hover { background: var(--green-dark); transform: translateY(-1px); }
+    .primary-button svg { width: 16px; height: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin-bottom: 27px; border: 1px solid var(--line); border-radius: 8px; background: var(--line); }
+    .stat { position: relative; min-width: 0; padding: 19px 21px; }
+    .stat { background: var(--white); }
+    .stat-label { color: var(--muted); font-size: 11px; font-weight: 600; }
+    .stat-value { margin-top: 8px; font: 700 27px var(--display); letter-spacing: -1px; }
+    .stat-meta { margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .stat-accent { color: var(--green); }
+    .content-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, .8fr); align-items: start; gap: 20px; }
+    .section { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+    .section-head { min-height: 66px; padding: 16px 19px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+    .section-title { margin: 0; font: 700 14px var(--display); }
+    .section-subtitle { margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .text-button { border: 0; background: none; color: var(--green); font-size: 11px; font-weight: 700; }
+    .text-button:hover { text-decoration: underline; }
+    .room-list { padding: 0 18px; }
+    .room-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) 78px; align-items: center; gap: 13px; min-height: 73px; border-bottom: 1px solid #eff0ec; }
+    .room-row:last-child { border-bottom: 0; }
+    .room-id { font: 700 13px var(--display); }
+    .room-type { margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .beds { display: flex; gap: 5px; }
+    .bed { width: 30px; height: 31px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; border: 1px solid #dce8de; border-radius: 4px; background: #edf4ee; color: var(--green); }
+    .bed.filled { border-color: #e8e8e2; background: #f1f1ed; color: #a0a39b; }
+    .bed svg { width: 14px; height: 14px; }
+    .bed-number { font-size: 9px; font-weight: 700; line-height: 10px; }
+    .room-capacity { text-align: right; font-size: 11px; font-weight: 700; }
+    .room-capacity span { color: var(--muted); font-weight: 400; }
+    .activity-list { padding: 3px 17px 8px; }
+    .activity { display: grid; grid-template-columns: 29px minmax(0, 1fr); gap: 10px; padding: 13px 0; border-bottom: 1px solid #eff0ec; }
+    .activity:last-child { border-bottom: 0; }
+    .activity-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: var(--green); background: var(--mint); }
+    .activity-icon.exit { color: var(--orange); background: var(--orange-light); }
+    .activity-icon svg { width: 14px; height: 14px; }
+    .activity-text { font-size: 11px; line-height: 1.45; }
+    .activity-time { margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .empty-activity { padding: 22px 4px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .residents-section { margin-top: 20px; }
+    .table-tools { display: flex; align-items: center; gap: 9px; }
+    .search-wrap { position: relative; }
+    .search-wrap svg { position: absolute; left: 9px; top: 9px; width: 14px; height: 14px; color: #92988f; }
+    .search { width: 180px; height: 32px; padding: 0 9px 0 29px; border: 1px solid var(--line); border-radius: 5px; outline: none; font-size: 11px; }
+    .search:focus, input:focus, select:focus { border-color: #71917b; box-shadow: 0 0 0 3px #2e604a18; outline: none; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+    th { padding: 11px 18px; color: #92988f; background: #fcfcfa; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; }
+    td { padding: 13px 18px; border-top: 1px solid #eff0ec; font-size: 11px; }
+    .resident-name { font-weight: 700; }
+    .resident-contact { margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .room-pill { padding: 4px 7px; border-radius: 4px; color: var(--green); background: var(--mint); font-size: 10px; font-weight: 700; }
+    .table-empty { padding: 26px 18px; color: var(--muted); font-size: 11px; text-align: center; }
+    .exit-button { padding: 5px 8px; border: 1px solid #ead6ce; border-radius: 4px; color: #a35137; background: white; font-size: 10px; font-weight: 600; }
+    .exit-button:hover { background: var(--orange-light); }
+    .payment-unpaid { color: #a35137; font-weight: 700; }
+    .payment-paid { color: var(--green); font-weight: 700; }
+    .payment-actions { display: flex; align-items: center; gap: 6px; }
+    .document-link { color: var(--green); font-weight: 600; }
+    .whatsapp-button, .mark-paid-button { padding: 5px 8px; border: 1px solid #d8e6da; border-radius: 4px; color: var(--green-dark); background: #f2f7f2; font-size: 10px; font-weight: 700; }
+    .whatsapp-button:hover, .mark-paid-button:hover { background: #e5f0e6; }
+    .mark-paid-button { border-color: var(--line); color: #626960; background: white; }
+    .page-view[hidden] { display: none; }
+    .rooms-page { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; padding: 17px; }
+    .structure-create { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .structure-form { display: flex; align-items: end; flex-wrap: wrap; gap: 9px; }
+    .structure-form .field { min-width: 120px; }
+    .structure-form .field.room-number-field { min-width: 96px; }
+    .structure-form .field.share-field { min-width: 115px; }
+    .structure-form input { height: 36px; padding: 0 9px; border: 1px solid #dfe2da; border-radius: 5px; font-size: 11px; }
+    .structure-form button { min-height: 36px; padding: 0 12px; }
+    .hostel-structure { padding: 16px 18px; }
+    .hostel-card { border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+    .hostel-card + .hostel-card { margin-top: 14px; }
+    .hostel-card-head { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+    .hostel-head-actions { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 9px; }
+    .hostel-card-title { margin: 0; font: 700 15px var(--display); }
+    .hostel-card-meta { margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .floor-group { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .floor-group:last-child { border-bottom: 0; }
+    .floor-head { margin-bottom: 11px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .floor-title { margin: 0; font: 700 12px var(--display); }
+    .room-structure-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 9px; }
+    .room-structure-tile { padding: 11px; border: 1px solid var(--line); border-radius: 5px; }
+    .room-structure-tile .room-tile-top { margin-bottom: 9px; }
+    .room-structure-tile .beds { flex-wrap: wrap; }
+    .room-structure-tile .bed { width: 28px; height: 29px; }
+    .room-structure-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+    .delete-room-button { min-height: 30px; padding: 0 8px; border: 1px solid #ead6ce; border-radius: 4px; color: #a35137; background: white; font-size: 10px; font-weight: 600; }
+    .delete-room-button:hover:not(:disabled) { background: var(--orange-light); }
+    .delete-room-button:disabled { cursor: not-allowed; opacity: .55; }
+    .floor-empty { padding: 14px 0; color: var(--muted); font-size: 11px; }
+    .room-tile { padding: 15px; border: 1px solid var(--line); border-radius: 6px; }
+    .room-tile-top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; }
+    .room-tile .beds { flex-wrap: wrap; }
+    .room-tile .bed { width: 34px; height: 34px; }
+    .modal-backdrop { position: fixed; z-index: 10; inset: 0; padding: 20px; display: grid; place-items: center; background: #1c2722a8; }
+    .modal-backdrop[hidden] { display: none; }
+    .modal { width: min(100%, 590px); max-height: min(92vh, 800px); overflow-y: auto; border-radius: 9px; background: white; box-shadow: 0 22px 70px #10201840; animation: arrive .22s ease-out; }
+    @keyframes arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .modal-head { padding: 21px 24px 17px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: start; }
+    .modal-head h2 { margin: 0; font: 600 22px var(--serif); }
+    .modal-head p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .close-button { width: 30px; height: 30px; border: 0; border-radius: 5px; color: #747a74; background: #f3f4f0; font-size: 19px; line-height: 1; }
+    .form-body { padding: 18px 24px 22px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; }
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; }
+    .field label span { color: var(--muted); font-weight: 400; }
+    .field input, .field select { width: 100%; height: 38px; padding: 0 10px; border: 1px solid #dfe2da; border-radius: 5px; background: white; font-size: 12px; }
+    .field input[type="file"] { height: auto; min-height: 38px; padding: 8px; font-size: 10px; }
+    .field-help { margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .sensitive-note { padding: 10px 12px; border-radius: 5px; color: #5d705e; background: #f0f5ef; font-size: 10px; line-height: 1.5; }
+    .form-error { margin: 0 0 12px; color: #a43f2e; font-size: 11px; }
+    .form-footer { padding-top: 17px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .form-footer-note { color: var(--muted); font-size: 10px; }
+    .cancel-button { min-height: 38px; padding: 0 13px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: white; font-size: 11px; font-weight: 600; }
+    .footer-actions { display: flex; gap: 8px; }
+    .form-footer .primary-button { min-height: 38px; }
+    .toast { position: fixed; z-index: 20; right: 22px; bottom: 22px; padding: 12px 16px; border-radius: 6px; color: white; background: #263f31; box-shadow: 0 8px 28px #16281d30; font-size: 12px; animation: arrive .2s ease-out; }
+    .toast[hidden] { display: none; }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 190px minmax(0, 1fr); }
+      .content-grid { grid-template-columns: 1fr; }
+      .activity-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 650px) {
+      .app { display: block; }
+      .login-panel { padding: 24px; }
+      .sidebar { position: sticky; z-index: 5; top: 0; padding: 9px 13px; flex-direction: row; align-items: center; justify-content: space-between; border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { margin: 0; padding: 0 3px; }
+      .brand-mark { width: 31px; height: 31px; }
+      .nav-label, .side-note { display: none; }
+      .nav { display: flex; gap: 1px; }
+      .nav-button { width: 38px; height: 38px; justify-content: center; padding: 0; }
+      .nav-button .nav-text { display: none; }
+      main { padding: 20px 15px 34px; }
+      .topbar { margin-bottom: 25px; }
+      .heading-row { align-items: start; }
+      .heading-row .primary-button { min-height: 38px; padding: 0 10px; font-size: 11px; white-space: nowrap; }
+      .heading-row .primary-button svg { width: 14px; }
+      .privacy-chip { font-size: 0; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
+      .stat { padding: 15px; }
+      .stat-value { font-size: 24px; }
+      .section-head { padding: 14px; }
+      .hostel-card-head { align-items: start; flex-direction: column; }
+      .hostel-head-actions { width: 100%; justify-content: start; }
+      .room-list { padding: 0 13px; }
+      .room-row { grid-template-columns: minmax(100px, 1fr) minmax(0, 1.6fr) 56px; gap: 8px; }
+      .bed { width: 29px; height: 30px; }
+      .activity-list { display: block; padding-right: 14px; padding-left: 14px; }
+      .residents-section { margin-top: 16px; }
+      .table-tools .search { width: 134px; }
+      th, td { padding-right: 12px; padding-left: 12px; }
+      .rooms-page { grid-template-columns: 1fr; padding: 12px; }
+      .modal-backdrop { padding: 10px; }
+      .modal-head { padding: 18px 18px 14px; }
+      .form-body { padding: 16px 18px 19px; }
+    }
+    @media (max-width: 390px) {
+      .brand-sub { display: none; }
+      .brand-name { font-size: 14px; }
+      .top-right { gap: 8px; }
+      .heading-row { gap: 8px; }
+      .heading-row .primary-button { padding: 0 8px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      .form-footer { align-items: end; }
+      .form-footer-note { max-width: 110px; line-height: 1.4; }
+    }
+  </style>
+</head>
+<body>
+  <section class="login-screen" id="login-screen" aria-labelledby="login-title">
+    <div class="login-panel">
+      <div class="login-brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Resident desk</div></div></div>
+      <p class="login-kicker">Staff access</p>
+      <h1 id="login-title">Welcome back.</h1>
+      <p class="login-copy">Sign in to manage residents, rooms, and payments.</p>
+      <form id="login-form" hidden>
+        <div class="login-field"><label for="login-username">Username</label><input id="login-username" name="username" autocomplete="username" required maxlength="40"></div>
+        <div class="login-field"><label for="login-password">Password</label><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="200"></div>
+        <p class="login-error" id="login-error" role="alert" hidden></p>
+        <button class="primary-button login-submit" type="submit">Sign in</button>
+      </form>
+      <p class="credentials-note" id="credentials-note" hidden>Your owner or developer will provide your sign-in details. Contact them if you need an account.</p>
+      <form id="signup-form" hidden>
+        <div class="login-field"><label for="signup-username">Admin username</label><input id="signup-username" name="username" autocomplete="username" pattern="[A-Za-z0-9._\-]{3,40}" required minlength="3" maxlength="40"></div>
+        <div class="login-field"><label for="signup-password">Password</label><input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="200"><div class="field-help">Use at least 12 characters.</div></div>
+        <div class="login-field"><label for="signup-confirm-password">Confirm password</label><input id="signup-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" required minlength="12" maxlength="200"></div>
+        <p class="login-error" id="signup-error" role="alert" hidden></p>
+        <button class="primary-button login-submit" type="submit">Create admin account</button>
+        <p class="setup-note">This creates the first administrator. Staff sign-up closes after setup; an administrator manages additional staff accounts.</p>
+      </form>
+    </div>
+  </section>
+
+  <div class="app" id="hostel-app" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Resident desk</div></div>
+      </div>
+      <div class="nav-label">Workspace</div>
+      <nav class="nav" aria-label="Main navigation">
+        <button class="nav-button active" type="button" data-view="overview" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg><span class="nav-text">Overview</span></button>
+        <button class="nav-button" type="button" data-view="residents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3.3"/><path d="M3 20v-1.4a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5V20M16 5.2a3.3 3.3 0 0 1 0 6.4M18 14a4.7 4.7 0 0 1 3 4.4V20" stroke-linecap="round"/></svg><span class="nav-text">Residents</span></button>
+        <button class="nav-button" type="button" data-view="rooms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 20V8l9-5 9 5v12M8 20v-7h8v7M3 10l9 5 9-5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Rooms</span></button>
+      </nav>
+      <div class="side-note"><strong>Flexible room setup</strong>Organize multiple hostels by floor, then choose the share count for every room.</div>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div class="crumb">Hostel operations <span aria-hidden="true"> / </span> <span id="crumb-view">Overview</span></div>
+        <div class="top-right"><span class="privacy-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 5v2" stroke-linecap="round"/></svg> Encrypted storage</span><div><div class="staff-identity" id="staff-identity"></div></div><button class="logout-button" type="button" id="logout-button">Sign out</button></div>
+      </div>
+
+      <section class="page-view" id="overview-view">
+        <div class="heading-row">
+          <div><p class="eyebrow">Your hostel, at a glance</p><h1>Good morning.</h1><div class="date" id="today-date"></div></div>
+          <button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Register joiner</button>
+        </div>
+        <div class="stats" aria-label="Hostel occupancy summary">
+          <div class="stat"><div class="stat-label">Total capacity</div><div class="stat-value" id="stat-capacity">0</div><div class="stat-meta">Across configured rooms</div></div>
+          <div class="stat"><div class="stat-label">Currently staying</div><div class="stat-value" id="stat-occupied">0</div><div class="stat-meta">Active residents</div></div>
+          <div class="stat"><div class="stat-label">Beds available</div><div class="stat-value stat-accent" id="stat-available">32</div><div class="stat-meta">Ready for check-in</div></div>
+          <div class="stat"><div class="stat-label">Rooms with space</div><div class="stat-value" id="stat-rooms-open">8</div><div class="stat-meta">At least one open bed</div></div>
+          <div class="stat"><div class="stat-label">Outstanding</div><div class="stat-value" id="stat-outstanding">₹0</div><div class="stat-meta" id="stat-unpaid-count">No unpaid balances</div></div>
+        </div>
+        <div class="content-grid">
+          <section class="section" aria-labelledby="room-overview-title">
+            <div class="section-head"><div><h2 class="section-title" id="room-overview-title">Room availability</h2><div class="section-subtitle">Across your hostels · Select a room when registering</div></div><button class="text-button" type="button" data-goto="rooms">Manage rooms</button></div>
+            <div class="room-list" id="room-list"></div>
+          </section>
+          <section class="section" aria-labelledby="activity-title">
+            <div class="section-head"><div><h2 class="section-title" id="activity-title">Recent activity</h2><div class="section-subtitle">Latest check-ins and check-outs</div></div></div>
+            <div class="activity-list" id="activity-list"></div>
+          </section>
+        </div>
+        <section class="section residents-section" aria-labelledby="residents-title">
+          <div class="section-head"><div><h2 class="section-title" id="residents-title">Current residents</h2><div class="section-subtitle" id="resident-count">No active residents</div></div><div class="table-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5" stroke-linecap="round"/></svg><input class="search" id="resident-search" type="search" placeholder="Find a resident" aria-label="Find a resident"></div><button class="text-button" type="button" data-goto="residents">View all</button></div></div>
+          <div id="resident-table"></div>
+        </section>
+      </section>
+
+      <section class="page-view" id="residents-view" hidden>
+        <div class="heading-row"><div><p class="eyebrow">People & stays</p><h1>Residents</h1><div class="date">Manage current hostel stays and check-outs.</div></div><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Register joiner</button></div>
+        <section class="section"><div class="section-head"><div><h2 class="section-title">Current residents</h2><div class="section-subtitle" id="resident-count-all">No active residents</div></div><div class="table-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5" stroke-linecap="round"/></svg><input class="search" id="resident-search-all" type="search" placeholder="Find a resident" aria-label="Find a resident"></div></div></div><div id="resident-table-all"></div></section>
+      </section>
+
+      <section class="page-view" id="rooms-view" hidden>
+        <div class="heading-row"><div><p class="eyebrow">Hostel structure</p><h1>Hostels, floors & rooms</h1><div class="date">Add buildings, floor numbers, room numbers, and each room's sharing capacity.</div></div><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Register joiner</button></div>
+        <section class="section"><div class="section-head"><div><h2 class="section-title">Room configuration</h2><div class="section-subtitle">Bed occupancy updates automatically as residents join and leave.</div></div></div><div class="structure-create" id="hostel-create-wrap"><form class="structure-form" id="hostel-form"><div class="field"><label for="hostel-name">New hostel name</label><input id="hostel-name" name="name" required maxlength="100" placeholder="e.g. North Campus"></div><button class="primary-button" type="submit">Add hostel</button></form></div><div class="hostel-structure" id="hostel-structure"></div></section>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="join-modal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="join-title">
+      <div class="modal-head"><div><h2 id="join-title">Register a new joiner</h2><p>Capture resident details and assign an available bed.</p></div><button class="close-button" type="button" data-close aria-label="Close dialog">×</button></div>
+      <form id="join-form">
+        <div class="form-body">
+          <div id="form-error" class="form-error" role="alert" hidden></div>
+          <div class="form-grid">
+            <div class="field full"><label for="resident-name-input">Full name</label><input id="resident-name-input" name="name" type="text" autocomplete="name" required maxlength="80" placeholder="As shown on ID"></div>
+            <div class="field"><label for="mobile-input">Mobile number</label><input id="mobile-input" name="mobile" type="tel" inputmode="numeric" autocomplete="tel" required placeholder="10-digit number"></div>
+            <div class="field"><label for="aadhaar-input">Aadhaar number <span>(optional)</span></label><input id="aadhaar-input" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off" placeholder="12 digits"><div class="field-help">Hidden on screen after registration.</div></div>
+            <div class="field"><label for="room-select">Assign room</label><select id="room-select" name="room" required></select></div>
+            <div class="field"><label for="bed-select">Assign bed</label><select id="bed-select" name="bed_number" required></select></div>
+            <div class="field"><label for="checkin-input">Joining date</label><input id="checkin-input" name="joining_date" type="date" required></div>
+            <div class="field"><label for="payment-date">Next payment date</label><input id="payment-date" name="payment_due_date" type="date" readonly aria-describedby="payment-date-help"><div class="field-help" id="payment-date-help">One month after joining; moves to month-end when needed.</div></div>
+            <div class="field"><label for="payment-status">Payment status</label><select id="payment-status" name="payment_status" required><option value="" selected disabled>Select status</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></div>
+            <div class="field" id="amount-due-field" hidden><label for="amount-due">Balance due <span>(INR)</span></label><input id="amount-due" name="amount_due" type="number" min="0.01" max="1000000" step="0.01" placeholder="Amount outstanding"><div class="field-help">This amount is included in the WhatsApp reminder.</div></div>
+            <div class="field"><label for="person-photo">Person photo <span>(optional)</span></label><input id="person-photo" name="person_photo" type="file" accept="image/*"><div class="field-help">Image file, up to 5 MB, if provided.</div></div>
+            <div class="field"><label for="aadhaar-photo">Aadhaar photo <span>(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/*"><div class="field-help">Image file, up to 5 MB, if provided.</div></div>
+            <div class="field full sensitive-note">Sensitive documents are not uploaded or saved by this demo. They stay in this page's temporary memory and are cleared when it is closed or refreshed.</div>
+          </div>
+          <div class="form-footer"><span class="form-footer-note">Aadhaar and photos are optional.</span><div class="footer-actions"><button class="cancel-button" type="button" data-close>Cancel</button><button class="primary-button" type="submit">Complete check-in</button></div></div>
+        </div>
+      </form>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script type="application/json">
+    (() => {
+      const ROOM_COUNT = 8;
+      const BEDS_PER_ROOM = 4;
+      const residents = [];
+      const activity = [];
+      const rooms = Array.from({ length: ROOM_COUNT }, (_, index) => ({ id: String(101 + index), residents: [] }));
+      const $ = (selector, root = document) => root.querySelector(selector);
+      const roomList = $('#room-list');
+      const roomSelect = $('#room-select');
+      const bedSelect = $('#bed-select');
+      const checkinInput = $('#checkin-input');
+      const paymentDateInput = $('#payment-date');
+      const joinModal = $('#join-modal');
+      const form = $('#join-form');
+      let toastTimer;
+
+      $('#today-date').textContent = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date());
+
+      const bedIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 18v-8M3 15h18v5M7 15v-5a3 3 0 0 1 3-3h7a4 4 0 0 1 4 4v4M3 20v-2m18 2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+      function escapeHTML(value) {
+        return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+      }
+
+      function availableBedNumbers(room) {
+        const assignedBeds = residents.filter(resident => resident.room === room.id).map(resident => resident.bedNumber);
+        return Array.from({ length: BEDS_PER_ROOM }, (_, index) => index + 1).filter(bedNumber => !assignedBeds.includes(bedNumber));
+      }
+
+      function availableBeds(room) {
+        return availableBedNumbers(room).length;
+      }
+
+      function renderBeds(room) {
+        return Array.from({ length: BEDS_PER_ROOM }, (_, index) => {
+          const bedNumber = index + 1;
+          const occupied = residents.some(resident => resident.room === room.id && resident.bedNumber === bedNumber);
+          return `<span class="bed ${occupied ? 'filled' : ''}" title="Bed ${bedNumber} ${occupied ? 'occupied' : 'available'}" aria-label="Bed ${bedNumber} ${occupied ? 'occupied' : 'available'}">${bedIcon}<span class="bed-number">${bedNumber}</span></span>`;
+        }).join('');
+      }
+
+      function renderBedOptions() {
+        const room = rooms.find(item => item.id === roomSelect.value);
+        const bedNumbers = room ? availableBedNumbers(room) : [];
+        bedSelect.innerHTML = bedNumbers.length ? bedNumbers.map(bedNumber => `<option value="${bedNumber}">Bed ${bedNumber}</option>`).join('') : '<option value="" disabled selected>No beds available</option>';
+        bedSelect.disabled = bedNumbers.length === 0;
+      }
+
+      function nextPaymentDate(joiningDate) {
+        const [year, month, day] = joiningDate.split('-').map(Number);
+        if (!year || !month || !day) return '';
+        const nextMonth = month % 12;
+        const nextYear = year + (month === 12 ? 1 : 0);
+        const lastDay = new Date(nextYear, nextMonth + 1, 0).getDate();
+        const dueDate = new Date(nextYear, nextMonth, Math.min(day, lastDay));
+        return `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
+      }
+
+      function updatePaymentDate() {
+        paymentDateInput.value = nextPaymentDate(checkinInput.value);
+      }
+
+      function renderRooms() {
+        const availableRooms = rooms.filter(room => availableBeds(room) > 0);
+        roomList.innerHTML = availableRooms.map(room => `<div class="room-row"><div><div class="room-id">Room ${room.id}</div><div class="room-type">4-share</div></div><div class="beds" aria-label="${room.residents.length} occupied, ${availableBeds(room)} available">${renderBeds(room)}</div><div class="room-capacity">${availableBeds(room)} <span>open</span></div></div>`).join('') || '<div class="table-empty">All beds are currently occupied.</div>';
+
+        $('#rooms-page').innerHTML = rooms.map(room => `<article class="room-tile"><div class="room-tile-top"><div><div class="room-id">Room ${room.id}</div><div class="room-type">Four-share · ${room.residents.length}/${BEDS_PER_ROOM} occupied</div></div><span class="room-pill">${availableBeds(room)} open</span></div><div class="beds" aria-label="${room.residents.length} occupied, ${availableBeds(room)} available">${renderBeds(room)}</div></article>`).join('');
+
+        roomSelect.innerHTML = availableRooms.length ? availableRooms.map(room => `<option value="${room.id}">Room ${room.id} · ${availableBeds(room)} bed${availableBeds(room) === 1 ? '' : 's'} open</option>`).join('') : '<option value="" disabled selected>No beds available</option>';
+        roomSelect.disabled = availableRooms.length === 0;
+        renderBedOptions();
+        $('#stat-capacity').textContent = String(ROOM_COUNT * BEDS_PER_ROOM);
+        $('#stat-occupied').textContent = String(residents.length);
+        $('#stat-available').textContent = String(rooms.reduce((total, room) => total + availableBeds(room), 0));
+        $('#stat-rooms-open').textContent = String(availableRooms.length);
+        const unpaidResidents = residents.filter(resident => resident.paymentStatus === 'unpaid');
+        const outstanding = unpaidResidents.reduce((total, resident) => total + resident.amountDue, 0);
+        $('#stat-outstanding').textContent = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(outstanding);
+        $('#stat-unpaid-count').textContent = unpaidResidents.length ? `${unpaidResidents.length} unpaid resident${unpaidResidents.length === 1 ? '' : 's'}` : 'No unpaid balances';
+      }
+
+      function residentRows(searchValue = '') {
+        const query = searchValue.trim().toLowerCase();
+        const filtered = residents.filter(resident => resident.name.toLowerCase().includes(query) || resident.mobile.includes(query) || resident.room.includes(query));
+        if (!filtered.length) return `<div class="table-empty">${residents.length ? 'No residents match your search.' : 'No active residents yet. Register a joiner to get started.'}</div>`;
+        return `<div class="table-scroll"><table><thead><tr><th>Resident</th><th>Room / Bed</th><th>Joining date</th><th>Next payment date</th><th>Payment</th><th>Documents</th><th>Actions</th></tr></thead><tbody>${filtered.map(resident => `<tr><td><div class="resident-name">${escapeHTML(resident.name)}</div><div class="resident-contact">${escapeHTML(resident.mobile)}${resident.aadhaar ? ` · Aadhaar ending ${escapeHTML(resident.aadhaar.slice(-4))}` : ''}</div></td><td><span class="room-pill">${escapeHTML(resident.room)} · Bed ${escapeHTML(resident.bedNumber)}</span></td><td>${escapeHTML(new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${resident.checkin}T00:00:00`)))}</td><td>${escapeHTML(new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${resident.paymentDueDate}T00:00:00`)))}</td><td>${resident.paymentStatus === 'unpaid' ? `<span class="payment-unpaid">${escapeHTML(new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(resident.amountDue))} due</span>` : '<span class="payment-paid">Paid</span>'}</td><td>${residentDocuments(resident)}</td><td><div class="payment-actions">${resident.paymentStatus === 'unpaid' ? `<button class="whatsapp-button" type="button" data-whatsapp="${escapeHTML(resident.id)}">Send reminder</button><button class="mark-paid-button" type="button" data-mark-paid="${escapeHTML(resident.id)}">Mark paid</button>` : ''}<button class="exit-button" type="button" data-checkout="${escapeHTML(resident.id)}">Check out</button></div></td></tr>`).join('')}</tbody></table></div>`;
+      }
+
+      function residentDocuments(resident) {
+        const documents = [];
+        if (resident.personPhoto?.name) documents.push('Person photo');
+        if (resident.aadhaarPhoto?.name) documents.push('Aadhaar photo');
+        return documents.length ? `${documents.join(', ')} received` : 'No photos';
+      }
+
+      function renderResidents() {
+        const countText = `${residents.length} active resident${residents.length === 1 ? '' : 's'}`;
+        $('#resident-count').textContent = residents.length ? countText : 'No active residents';
+        $('#resident-count-all').textContent = residents.length ? countText : 'No active residents';
+        $('#resident-table').innerHTML = residentRows($('#resident-search').value);
+        $('#resident-table-all').innerHTML = residentRows($('#resident-search-all').value);
+      }
+
+      function renderActivity() {
+        const icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>';
+        $('#activity-list').innerHTML = activity.length ? activity.slice(0, 8).map(item => `<div class="activity"><div class="activity-icon ${item.type === 'exit' ? 'exit' : ''}">${item.type === 'exit' ? icon.replaceAll('M12 5v14M5 12h14', 'M5 12h14') : icon}</div><div><div class="activity-text"><strong>${escapeHTML(item.name)}</strong> ${item.type === 'exit' ? 'checked out of' : 'checked in to'} <strong>Room ${escapeHTML(item.room)}</strong></div><div class="activity-time">${escapeHTML(item.time)}</div></div></div>`).join('') : '<div class="empty-activity">Check-ins and check-outs will appear here.</div>';
+      }
+
+      function render() {
+        renderRooms();
+        renderResidents();
+        renderActivity();
+      }
+
+      function showToast(message) {
+        const toast = $('#toast');
+        toast.textContent = message;
+        toast.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { toast.hidden = true; }, 3200);
+      }
+
+      function openModal() {
+        if (!rooms.some(room => availableBeds(room) > 0)) {
+          showToast('All beds are occupied. Check out a resident to free a bed.');
+          return;
+        }
+        $('#form-error').hidden = true;
+        const today = new Date();
+        checkinInput.value = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        updatePaymentDate();
+        joinModal.hidden = false;
+        $('#resident-name-input').focus();
+      }
+
+      function closeModal() {
+        joinModal.hidden = true;
+        form.reset();
+        $('#amount-due-field').hidden = true;
+        $('#amount-due').required = false;
+      }
+
+      function fileError(file, label) {
+        if (!file || !file.name) return '';
+        if (!file.type.startsWith('image/')) return `${label} must be an image.`;
+        if (file.size > 5 * 1024 * 1024) return `${label} must be 5 MB or smaller.`;
+        return '';
+      }
+
+      function formatTime() {
+        return new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' }).format(new Date());
+      }
+
+      function openWhatsAppReminder(resident) {
+        const digits = resident.mobile.replace(/\D/g, '');
+        const phone = digits.length === 10 ? `91${digits}` : digits.startsWith('0') ? `91${digits.slice(1)}` : digits;
+        const amount = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(resident.amountDue);
+        const dueDate = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${resident.paymentDueDate}T00:00:00`));
+        const message = `Hello ${resident.name}, our records show an outstanding hostel payment of ${amount}, due on ${dueDate}. Please complete payment at your earliest convenience. If you have already paid, please disregard this reminder. Thank you, Haven Hostel.`;
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+      }
+
+      $('#payment-status').addEventListener('change', event => {
+        const unpaid = event.target.value === 'unpaid';
+        $('#amount-due-field').hidden = !unpaid;
+        $('#amount-due').required = unpaid;
+        if (!unpaid) $('#amount-due').value = '';
+      });
+
+      roomSelect.addEventListener('change', renderBedOptions);
+      checkinInput.addEventListener('input', updatePaymentDate);
+
+      document.addEventListener('click', event => {
+        const joinButton = event.target.closest('.open-join');
+        if (joinButton) openModal();
+        if (event.target === joinModal || event.target.closest('[data-close]')) closeModal();
+        const navButton = event.target.closest('[data-view]');
+        const gotoButton = event.target.closest('[data-goto]');
+        const destination = navButton?.dataset.view || gotoButton?.dataset.goto;
+        if (destination) {
+          document.querySelectorAll('.page-view').forEach(view => { view.hidden = view.id !== `${destination}-view`; });
+          document.querySelectorAll('.nav-button').forEach(button => {
+            const active = button.dataset.view === destination;
+            button.classList.toggle('active', active);
+            if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+          });
+          $('#crumb-view').textContent = destination.charAt(0).toUpperCase() + destination.slice(1);
+        }
+        const checkoutButton = event.target.closest('[data-checkout]');
+        if (checkoutButton) {
+          const index = residents.findIndex(resident => resident.id === checkoutButton.dataset.checkout);
+          if (index < 0) return;
+          const residentToCheckOut = residents[index];
+          if (!window.confirm(`Check out ${residentToCheckOut.name} from Room ${residentToCheckOut.room}, Bed ${residentToCheckOut.bedNumber}? This will free the bed.`)) return;
+          const [resident] = residents.splice(index, 1);
+          const room = rooms.find(item => item.id === resident.room);
+          room.residents = room.residents.filter(id => id !== resident.id);
+          activity.unshift({ type: 'exit', name: resident.name, room: resident.room, time: `Checked out · ${formatTime()}` });
+          render();
+          showToast(`${resident.name} checked out of Room ${resident.room}, Bed ${resident.bedNumber}.`);
+        }
+        const whatsappButton = event.target.closest('[data-whatsapp]');
+        if (whatsappButton) {
+          const resident = residents.find(item => item.id === whatsappButton.dataset.whatsapp);
+          if (resident?.paymentStatus === 'unpaid') openWhatsAppReminder(resident);
+        }
+        const markPaidButton = event.target.closest('[data-mark-paid]');
+        if (markPaidButton) {
+          const resident = residents.find(item => item.id === markPaidButton.dataset.markPaid);
+          if (!resident || resident.paymentStatus !== 'unpaid') return;
+          resident.paymentStatus = 'paid';
+          resident.amountDue = 0;
+          render();
+          showToast(`Payment marked as paid for ${resident.name}.`);
+        }
+      });
+
+      document.addEventListener('input', event => {
+        if (event.target.id === 'resident-search') renderResidents();
+        if (event.target.id === 'resident-search-all') renderResidents();
+      });
+
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const data = new FormData(form);
+        const aadhaar = String(data.get('aadhaar')).replace(/\s/g, '');
+        const mobile = String(data.get('mobile')).replace(/\D/g, '');
+        const personPhoto = data.get('personPhoto');
+        const aadhaarPhoto = data.get('aadhaarPhoto');
+        const paymentStatus = String(data.get('paymentStatus'));
+        const amountDue = Number(data.get('amountDue'));
+        const bedNumber = Number(data.get('bedNumber'));
+        const paymentDueDate = nextPaymentDate(String(data.get('checkin')));
+        const room = rooms.find(item => item.id === data.get('room'));
+        let error = '';
+        if (aadhaar && !/^\d{12}$/.test(aadhaar)) error = 'Enter a valid 12-digit Aadhaar number.';
+        else if (mobile.length < 10 || mobile.length > 15) error = 'Enter a valid mobile number.';
+        else if (!['paid', 'unpaid'].includes(paymentStatus)) error = 'Select a payment status.';
+        else if (paymentStatus === 'unpaid' && (!Number.isFinite(amountDue) || amountDue <= 0 || amountDue > 1000000)) error = 'Enter a valid outstanding balance.';
+        if (!error) error = fileError(personPhoto, 'Person photo');
+        if (!error) error = fileError(aadhaarPhoto, 'Aadhaar photo');
+        if (!error && (!room || !availableBedNumbers(room).includes(bedNumber))) error = 'That bed is no longer available. Choose another bed.';
+        if (error) {
+          $('#form-error').textContent = error;
+          $('#form-error').hidden = false;
+          return;
+        }
+        const resident = { id: crypto.randomUUID(), name: String(data.get('name')).trim(), mobile, aadhaar, personPhoto, aadhaarPhoto, room: room.id, bedNumber, checkin: String(data.get('checkin')), paymentDueDate, paymentStatus, amountDue: paymentStatus === 'unpaid' ? amountDue : 0 };
+        if (!resident.name || !resident.checkin || !resident.paymentDueDate) {
+          $('#form-error').textContent = 'Enter the resident name and a valid joining date.';
+          $('#form-error').hidden = false;
+          return;
+        }
+        residents.push(resident);
+        room.residents.push(resident.id);
+        activity.unshift({ type: 'join', name: resident.name, room: resident.room, bedNumber: resident.bedNumber, time: `Checked in · ${formatTime()}` });
+        render();
+        closeModal();
+        showToast(`${resident.name} checked in to Room ${resident.room}.`);
+      });
+
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !joinModal.hidden) closeModal();
+      });
+
+      render();
+    })();
+  </script>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
