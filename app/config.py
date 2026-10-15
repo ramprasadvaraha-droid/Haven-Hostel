@@ -27,6 +27,12 @@ WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip(
 WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "").strip()
 WHATSAPP_BUSINESS_NUMBER = os.environ.get("WHATSAPP_BUSINESS_NUMBER", "").strip().lstrip("+")
 WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION", "v22.0").strip()
+HOSTEL_SMTP_HOST = os.environ.get("HOSTEL_SMTP_HOST", "").strip()
+HOSTEL_SMTP_PORT = int(os.environ.get("HOSTEL_SMTP_PORT", "587"))
+HOSTEL_SMTP_USERNAME = os.environ.get("HOSTEL_SMTP_USERNAME", "").strip()
+HOSTEL_SMTP_PASSWORD = os.environ.get("HOSTEL_SMTP_PASSWORD", "")
+HOSTEL_SMTP_FROM = os.environ.get("HOSTEL_SMTP_FROM", "").strip()
+HOSTEL_SMTP_USE_SSL = os.environ.get("HOSTEL_SMTP_USE_SSL", "false").lower() == "true"
 
 
 def encryption_key() -> bytes:

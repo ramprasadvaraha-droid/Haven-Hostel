@@ -97,6 +97,9 @@ def create_platform_admin() -> None:
     username = input("Developer username: ").strip()
     if not re.fullmatch(r"[A-Za-z0-9._-]{3,40}", username):
         raise SystemExit("Use 3-40 letters, numbers, dots, underscores, or hyphens for the username.")
+    recovery_email = input("Employer recovery email: ").strip()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recovery_email):
+        raise SystemExit("Enter a valid recovery email address.")
     password = getpass.getpass("Password (8+ characters with upper/lowercase, number, and special character): ")
     confirmation = getpass.getpass("Confirm password: ")
     if password != confirmation:
@@ -110,8 +113,9 @@ def create_platform_admin() -> None:
     try:
         with database.transaction() as connection:
             connection.execute(
-                "INSERT INTO platform_accounts (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
-                (account_id, username, hash_password(password), now),
+                "INSERT INTO platform_accounts (id, username, password_hash, recovery_email, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (account_id, username, hash_password(password), recovery_email, now),
             )
             database.write_audit(
                 connection,
@@ -126,11 +130,40 @@ def create_platform_admin() -> None:
     print(f"Created developer account: {username}")
 
 
+def set_platform_recovery_email(username: str) -> None:
+    database.initialize_database()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{3,40}", username):
+        raise SystemExit("Use 3-40 letters, numbers, dots, underscores, or hyphens for the username.")
+    recovery_email = input("Employer recovery email: ").strip()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recovery_email):
+        raise SystemExit("Enter a valid recovery email address.")
+    with database.transaction() as connection:
+        account = connection.execute(
+            "SELECT id FROM platform_accounts WHERE username = ? AND active = 1",
+            (username,),
+        ).fetchone()
+        if not account:
+            raise SystemExit("No active Employer account with that username exists.")
+        connection.execute(
+            "UPDATE platform_accounts SET recovery_email = ? WHERE id = ?",
+            (recovery_email, account["id"]),
+        )
+        database.write_audit(
+            connection,
+            None,
+            "platform.recovery_email_set",
+            "platform_account",
+            account["id"],
+            {"username": username},
+        )
+    print(f"Recovery email updated for Employer account: {username}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage Haven Hostel staff accounts.")
     parser.add_argument(
         "command",
-        choices=["create-admin", "create-warden", "create-staff", "reset-password", "create-platform-admin"],
+        choices=["create-admin", "create-warden", "create-staff", "reset-password", "create-platform-admin", "set-platform-recovery-email"],
     )
     parser.add_argument("--role", choices=["admin", "warden"], default="warden")
     parser.add_argument("--owner", help="Admin username whose data this staff account will access")
@@ -138,6 +171,10 @@ def main() -> None:
     arguments = parser.parse_args()
     if arguments.command == "create-platform-admin":
         create_platform_admin()
+        return
+    if arguments.command == "set-platform-recovery-email":
+        username = arguments.username or input("Employer username: ").strip()
+        set_platform_recovery_email(username)
         return
     if arguments.command == "reset-password":
         username = arguments.username or input("Staff username: ").strip()

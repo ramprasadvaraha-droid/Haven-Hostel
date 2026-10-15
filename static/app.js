@@ -8,9 +8,13 @@
   const loginForm = $('#login-form');
   const signupForm = $('#signup-form');
   const developerLoginForm = $('#developer-login-form');
+  const platformResetRequestForm = $('#platform-reset-request-form');
+  const platformResetConfirmForm = $('#platform-reset-confirm-form');
+  const platformPasswordChangeForm = $('#platform-password-change-form');
   const joinForm = $('#join-form');
   const joinModal = $('#join-modal');
   const roomChargesModal = $('#room-charges-modal');
+  const platformPasswordChangeModal = $('#platform-password-change-modal');
   const roomSelect = $('#room-select');
   const bedSelect = $('#bed-select');
   const joiningDate = $('#checkin-input');
@@ -88,7 +92,38 @@
     developerLoginScreen.hidden = false;
     hostelApp.hidden = true;
     platformApp.hidden = true;
+    developerLoginForm.hidden = false;
+    $('#show-platform-reset').hidden = false;
+    $('#platform-reset-view').hidden = true;
+    platformResetRequestForm.reset();
+    platformResetRequestForm.hidden = false;
+    platformResetConfirmForm.reset();
+    platformResetConfirmForm.hidden = true;
     $('#developer-login-error').hidden = true;
+    $('#developer-username').focus();
+  }
+
+  function showPlatformPasswordReset() {
+    developerLoginForm.hidden = true;
+    $('#show-platform-reset').hidden = true;
+    $('#developer-login-error').hidden = true;
+    $('#platform-reset-view').hidden = false;
+    platformResetRequestForm.reset();
+    platformResetRequestForm.hidden = false;
+    platformResetConfirmForm.reset();
+    platformResetConfirmForm.hidden = true;
+    $('#platform-reset-request-error').hidden = true;
+    $('#platform-reset-request-message').hidden = true;
+    $('#reset-request-username').focus();
+  }
+
+  function returnToPlatformSignIn(message = '') {
+    $('#platform-reset-view').hidden = true;
+    developerLoginForm.hidden = false;
+    $('#show-platform-reset').hidden = false;
+    $('#developer-login-error').textContent = message;
+    $('#developer-login-error').hidden = !message;
+    $('#developer-password').value = '';
     $('#developer-username').focus();
   }
 
@@ -440,6 +475,19 @@
     roomChargesModal.hidden = true;
   }
 
+  function openPlatformPasswordChangeModal() {
+    platformPasswordChangeForm.reset();
+    $('#platform-password-change-error').hidden = true;
+    platformPasswordChangeModal.hidden = false;
+    $('#platform-current-password').focus();
+  }
+
+  function closePlatformPasswordChangeModal() {
+    platformPasswordChangeModal.hidden = true;
+    platformPasswordChangeForm.reset();
+    $('#platform-password-change-error').hidden = true;
+  }
+
   function openWhatsAppReminder(resident) {
     const digits = resident.mobile.replace(/\D/g, '');
     const phone = digits.length === 10 ? `91${digits}` : digits.startsWith('0') ? `91${digits.slice(1)}` : digits;
@@ -489,6 +537,88 @@
     } catch (error) {
       $('#developer-login-error').textContent = error.message;
       $('#developer-login-error').hidden = false;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  platformResetRequestForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = platformResetRequestForm.querySelector('button[type="submit"]');
+    const username = $('#reset-request-username').value.trim();
+    $('#platform-reset-request-error').hidden = true;
+    submit.disabled = true;
+    try {
+      const result = await apiRequest('/api/platform/password/forgot', {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      });
+      $('#reset-confirm-username').value = username;
+      $('#platform-reset-request-message').textContent = result.message;
+      $('#platform-reset-request-message').hidden = false;
+      platformResetRequestForm.hidden = true;
+      platformResetConfirmForm.hidden = false;
+      $('#platform-reset-code').focus();
+    } catch (error) {
+      $('#platform-reset-request-error').textContent = error.message;
+      $('#platform-reset-request-error').hidden = false;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  platformResetConfirmForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = platformResetConfirmForm.querySelector('button[type="submit"]');
+    const password = $('#platform-reset-password').value;
+    $('#platform-reset-confirm-error').hidden = true;
+    if (password !== $('#platform-reset-confirm-password').value) {
+      $('#platform-reset-confirm-error').textContent = 'The passwords do not match.';
+      $('#platform-reset-confirm-error').hidden = false;
+      return;
+    }
+    submit.disabled = true;
+    try {
+      await apiRequest('/api/platform/password/reset', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: $('#reset-confirm-username').value,
+          code: $('#platform-reset-code').value,
+          password,
+        }),
+      });
+      const username = $('#reset-confirm-username').value;
+      returnToPlatformSignIn('Password reset. Sign in with your new password.');
+      $('#developer-username').value = username;
+    } catch (error) {
+      $('#platform-reset-confirm-error').textContent = error.message;
+      $('#platform-reset-confirm-error').hidden = false;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  platformPasswordChangeForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = platformPasswordChangeForm.querySelector('button[type="submit"]');
+    const password = $('#platform-new-password').value;
+    $('#platform-password-change-error').hidden = true;
+    if (password !== $('#platform-confirm-new-password').value) {
+      $('#platform-password-change-error').textContent = 'The passwords do not match.';
+      $('#platform-password-change-error').hidden = false;
+      return;
+    }
+    submit.disabled = true;
+    try {
+      await apiRequest('/api/platform/session/password', {
+        method: 'POST',
+        body: JSON.stringify({ current_password: $('#platform-current-password').value, password }),
+      });
+      closePlatformPasswordChangeModal();
+      showToast('Employer password updated.');
+    } catch (error) {
+      $('#platform-password-change-error').textContent = error.message;
+      $('#platform-password-change-error').hidden = false;
     } finally {
       submit.disabled = false;
     }
@@ -781,6 +911,12 @@
     }
     if (portalButton?.dataset.openPortal === 'developer') showDeveloperLogin();
     if (event.target.closest('[data-back-to-landing]')) showLanding();
+    if (event.target.closest('#show-platform-reset')) showPlatformPasswordReset();
+    if (event.target.closest('#back-to-employer-signin')) returnToPlatformSignIn();
+    if (event.target.closest('#change-platform-password-button')) openPlatformPasswordChangeModal();
+    if (event.target === platformPasswordChangeModal || event.target.closest('[data-close-platform-password]')) {
+      closePlatformPasswordChangeModal();
+    }
 
     const platformHostelButton = event.target.closest('[data-select-platform-hostel]');
     if (platformHostelButton) {
@@ -979,7 +1115,8 @@
 
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
-    if (!roomChargesModal.hidden) closeRoomChargesModal();
+    if (!platformPasswordChangeModal.hidden) closePlatformPasswordChangeModal();
+    else if (!roomChargesModal.hidden) closeRoomChargesModal();
     else if (!joinModal.hidden) closeJoinModal();
   });
 

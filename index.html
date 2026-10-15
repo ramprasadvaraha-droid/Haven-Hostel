@@ -499,6 +499,26 @@
         <p class="login-error" id="developer-login-error" role="alert" hidden></p>
         <button class="primary-button login-submit" type="submit">Sign in</button>
       </form>
+      <button class="portal-back" id="show-platform-reset" type="button">Forgot password?</button>
+      <section id="platform-reset-view" hidden aria-labelledby="platform-reset-title">
+        <h1 id="platform-reset-title">Reset Employer password.</h1>
+        <p class="login-copy">We will send a one-time code to the recovery email on your account.</p>
+        <form id="platform-reset-request-form">
+          <div class="login-field"><label for="reset-request-username">Employer username</label><input id="reset-request-username" name="username" autocomplete="username" required maxlength="40"></div>
+          <p class="login-error" id="platform-reset-request-error" role="alert" hidden></p>
+          <p class="credentials-note" id="platform-reset-request-message" role="status" hidden></p>
+          <button class="primary-button login-submit" type="submit">Send reset code</button>
+        </form>
+        <form id="platform-reset-confirm-form" hidden>
+          <div class="login-field"><label for="reset-confirm-username">Employer username</label><input id="reset-confirm-username" name="username" readonly required maxlength="40"></div>
+          <div class="login-field"><label for="platform-reset-code">8-digit email code</label><input id="platform-reset-code" name="code" inputmode="numeric" pattern="[0-9]{8}" required maxlength="8" autocomplete="one-time-code"></div>
+          <div class="login-field"><label for="platform-reset-password">New password</label><input id="platform-reset-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="200" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,200}" title="Use 8+ characters with uppercase, lowercase, a number, and a special character."><div class="field-help">At least 8 characters with uppercase, lowercase, a number, and a special character.</div></div>
+          <div class="login-field"><label for="platform-reset-confirm-password">Confirm new password</label><input id="platform-reset-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required minlength="8" maxlength="200"></div>
+          <p class="login-error" id="platform-reset-confirm-error" role="alert" hidden></p>
+          <button class="primary-button login-submit" type="submit">Reset password</button>
+        </form>
+        <button class="portal-back" id="back-to-employer-signin" type="button">Back to sign in</button>
+      </section>
       <button class="portal-back" type="button" data-back-to-landing>Back to Haven Hostel</button>
     </div>
   </section>
@@ -581,7 +601,7 @@
   </div>
 
   <div class="platform-app" id="platform-app" hidden>
-    <header class="platform-topbar"><div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Platform operations</div></div></div><div class="platform-identity"><span class="platform-badge">EMPLOYER PORTAL</span><span class="staff-identity" id="platform-identity"></span><button class="logout-button" type="button" id="platform-logout-button">Sign out</button></div></header>
+    <header class="platform-topbar"><div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Platform operations</div></div></div><div class="platform-identity"><span class="platform-badge">EMPLOYER PORTAL</span><span class="staff-identity" id="platform-identity"></span><button class="text-button" type="button" id="change-platform-password-button">Change password</button><button class="logout-button" type="button" id="platform-logout-button">Sign out</button></div></header>
     <main class="platform-main">
       <div class="heading-row"><div><p class="eyebrow">Platform operations</p><h1>Employer workspace</h1><div class="date">Register the client, set up rooms, then review subscriptions.</div></div></div>
       <nav class="platform-steps" aria-label="Employer setup steps">
@@ -640,6 +660,20 @@
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="room-charges-title">
       <div class="modal-head"><div><h2 id="room-charges-title">Room type charges</h2><p>Set a monthly price for each sharing type available in your hostels.</p></div><button class="close-button" type="button" data-close-room-charges aria-label="Close room type charges">×</button></div>
       <div class="room-charges-list" id="room-charges-list"><div class="table-empty">Room charges load with your hostel layout.</div></div>
+    </section>
+  </div>
+  <div class="modal-backdrop" id="platform-password-change-modal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="platform-password-change-title">
+      <div class="modal-head"><div><h2 id="platform-password-change-title">Change Employer password</h2><p>Enter your current password and choose a new one.</p></div><button class="close-button" type="button" data-close-platform-password aria-label="Close password change">×</button></div>
+      <form id="platform-password-change-form">
+        <div class="form-body">
+          <div class="login-field"><label for="platform-current-password">Current password</label><input id="platform-current-password" name="current_password" type="password" autocomplete="current-password" required maxlength="200"></div>
+          <div class="login-field"><label for="platform-new-password">New password</label><input id="platform-new-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="200" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,200}" title="Use 8+ characters with uppercase, lowercase, a number, and a special character."><div class="field-help">At least 8 characters with uppercase, lowercase, a number, and a special character.</div></div>
+          <div class="login-field"><label for="platform-confirm-new-password">Confirm new password</label><input id="platform-confirm-new-password" name="confirm_password" type="password" autocomplete="new-password" required minlength="8" maxlength="200"></div>
+          <p class="login-error" id="platform-password-change-error" role="alert" hidden></p>
+          <div class="form-footer"><span class="form-footer-note">Other Employer sessions will be signed out.</span><div class="footer-actions"><button class="cancel-button" type="button" data-close-platform-password>Cancel</button><button class="primary-button" type="submit">Update password</button></div></div>
+        </div>
+      </form>
     </section>
   </div>
   <div class="toast" id="toast" role="status" hidden></div>

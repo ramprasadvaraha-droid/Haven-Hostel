@@ -444,6 +444,92 @@ def test_platform_subscription_payment_moves_from_pending_to_received(logged_in_
     assert dashboard["subscriptions"][0]["status"] == "received"
 
 
+def test_platform_password_change_checks_current_password_and_revokes_other_sessions(logged_in_client):
+    client, _ = logged_in_client
+    csrf = login_platform(client)
+    second_session_client = TestClient(app)
+    second_login = second_session_client.post(
+        "/api/platform/session",
+        json={"username": "developer", "password": "Developer-password1!"},
+    )
+    assert second_login.status_code == 200
+
+    wrong_password = client.post(
+        "/api/platform/session/password",
+        json={"current_password": "Wrong-password1!", "password": "Updated-password2!"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert wrong_password.status_code == 400
+    changed = client.post(
+        "/api/platform/session/password",
+        json={"current_password": "Developer-password1!", "password": "Updated-password2!"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert changed.status_code == 200
+    assert client.get("/api/platform/session").status_code == 200
+    assert second_session_client.get("/api/platform/session").status_code == 401
+
+    client.cookies.delete(config.PLATFORM_COOKIE_NAME)
+    assert client.post(
+        "/api/platform/session", json={"username": "developer", "password": "Developer-password1!"}
+    ).status_code == 401
+    assert client.post(
+        "/api/platform/session", json={"username": "developer", "password": "Updated-password2!"}
+    ).status_code == 200
+    second_session_client.close()
+
+
+def test_platform_forgot_password_sends_single_use_email_code_and_revokes_sessions(logged_in_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = logged_in_client
+    login_platform(client)
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE platform_accounts SET recovery_email = ? WHERE username = ?",
+            ("developer@example.com", "developer"),
+        )
+    monkeypatch.setattr(config, "HOSTEL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(config, "HOSTEL_SMTP_FROM", "no-reply@example.com")
+    sent_messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.main.send_platform_password_reset_code",
+        lambda email, code: sent_messages.append((email, code)),
+    )
+
+    requested = client.post("/api/platform/password/forgot", json={"username": "developer"})
+    assert requested.status_code == 200
+    assert "If an active Employer account" in requested.json()["message"]
+    assert len(sent_messages) == 1
+    assert sent_messages[0][0] == "developer@example.com"
+
+    code = sent_messages[0][1]
+    wrong_code = "00000000" if code != "00000000" else "00000001"
+    invalid = client.post(
+        "/api/platform/password/reset",
+        json={"username": "developer", "code": wrong_code, "password": "Reset-password3!"},
+    )
+    assert invalid.status_code == 400
+    reset = client.post(
+        "/api/platform/password/reset",
+        json={"username": "developer", "code": code, "password": "Reset-password3!"},
+    )
+    assert reset.status_code == 200
+    assert client.get("/api/platform/session").status_code == 401
+    assert client.post(
+        "/api/platform/session", json={"username": "developer", "password": "Reset-password3!"}
+    ).status_code == 200
+
+
+def test_platform_forgot_password_requires_mail_configuration(logged_in_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = logged_in_client
+    monkeypatch.setattr(config, "HOSTEL_SMTP_HOST", "")
+    monkeypatch.setattr(config, "HOSTEL_SMTP_FROM", "")
+
+    response = client.post("/api/platform/password/forgot", json={"username": "unknown-employer"})
+
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"].lower()
+
+
 def test_cli_password_reset_updates_hash_and_revokes_sessions(logged_in_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = logged_in_client
     new_password = "Updated-owner-password1!"

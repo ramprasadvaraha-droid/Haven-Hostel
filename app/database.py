@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS platform_accounts (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
+    recovery_email TEXT,
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     created_at TEXT NOT NULL
 );
@@ -40,6 +41,15 @@ CREATE TABLE IF NOT EXISTS platform_sessions (
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS platform_password_resets (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES platform_accounts(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS platform_password_reset_account ON platform_password_resets(account_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS subscription_payments (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES staff(id),
@@ -281,6 +291,7 @@ def initialize_database() -> None:
             connection.executescript(POSTGRES_SCHEMA)
         with transaction() as connection:
             now = datetime.now(timezone.utc).isoformat()
+            connection.execute("ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS recovery_email TEXT")
             connection.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES staff(id)")
             connection.execute("ALTER TABLE hostels ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES staff(id)")
             connection.execute(
@@ -296,7 +307,7 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS monthly_rent_paise INTEGER NOT NULL DEFAULT 0"
             )
-            for version in (1, 2, 3, 4, 5, 6):
+            for version in (1, 2, 3, 4, 5, 6, 7):
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?) ON CONFLICT DO NOTHING",
                     (version, now),
@@ -452,6 +463,19 @@ def initialize_database() -> None:
             if not migration_six:
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (6, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_seven = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 7"
+            ).fetchone()
+            if not migration_seven:
+                platform_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(platform_accounts)").fetchall()
+                }
+                if "recovery_email" not in platform_columns:
+                    connection.execute("ALTER TABLE platform_accounts ADD COLUMN recovery_email TEXT")
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (7, ?)",
                     (datetime.now(timezone.utc).isoformat(),),
                 )
             connection.commit()

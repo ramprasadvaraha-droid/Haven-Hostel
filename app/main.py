@@ -2,13 +2,17 @@ import json
 import hashlib
 import hmac
 import ipaddress
+import logging
 import re
 import secrets
+import smtplib
 import sqlite3
+import ssl
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from email.message import EmailMessage
 from io import BytesIO
 from typing import Literal
 
@@ -61,6 +65,19 @@ class StaffRequest(StrongPasswordRequest):
 class PlatformLoginRequest(BaseModel):
     username: str = Field(min_length=3, max_length=40)
     password: str = Field(min_length=1, max_length=200)
+
+
+class PlatformPasswordChangeRequest(StrongPasswordRequest):
+    current_password: str = Field(min_length=1, max_length=200)
+
+
+class PlatformPasswordResetRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=40)
+
+
+class PlatformPasswordResetConfirmRequest(StrongPasswordRequest):
+    username: str = Field(min_length=3, max_length=40)
+    code: str = Field(min_length=8, max_length=8, pattern=r"^[0-9]{8}$")
 
 
 class PlatformClientRequest(StrongPasswordRequest):
@@ -131,6 +148,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Haven Hostel", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=config.ROOT_DIR / "static"), name="static")
+logger = logging.getLogger(__name__)
 
 
 @app.middleware("http")
@@ -383,6 +401,150 @@ def record_failed_login(username: str, address_hash: str) -> None:
             "INSERT INTO login_attempts (username, address_hash, succeeded, attempted_at) VALUES (?, ?, 0, ?)",
             (username.casefold(), address_hash, attempted_at),
         )
+
+
+@app.post("/api/platform/session/password")
+def change_platform_password(
+    payload: PlatformPasswordChangeRequest,
+    request: Request,
+    account: dict[str, str] = Depends(require_platform_write),
+) -> dict[str, str]:
+    with database.transaction() as connection:
+        account_row = connection.execute(
+            "SELECT password_hash FROM platform_accounts WHERE id = ? AND active = 1",
+            (account["id"],),
+        ).fetchone()
+        if not account_row or not verify_password(account_row["password_hash"], payload.current_password):
+            raise HTTPException(status_code=400, detail="Current password is incorrect.")
+        connection.execute(
+            "UPDATE platform_accounts SET password_hash = ? WHERE id = ?",
+            (hash_password(payload.password), account["id"]),
+        )
+        current_token = hash_session_token(request.cookies.get(config.PLATFORM_COOKIE_NAME, ""))
+        connection.execute(
+            "DELETE FROM platform_sessions WHERE account_id = ? AND token_hash <> ?",
+            (account["id"], current_token),
+        )
+        database.write_audit(connection, None, "platform.password_change", "platform_account", account["id"])
+    return {"status": "updated"}
+
+
+@app.post("/api/platform/password/forgot")
+def request_platform_password_reset(payload: PlatformPasswordResetRequest, request: Request) -> dict[str, str]:
+    if not config.HOSTEL_SMTP_HOST or not config.HOSTEL_SMTP_FROM:
+        raise HTTPException(status_code=503, detail="Employer password recovery is not configured. Contact the platform administrator.")
+
+    now = datetime.now(timezone.utc)
+    now_text = now.isoformat()
+    cutoff = (now - timedelta(minutes=15)).isoformat()
+    address = request.client.host if request.client else "unknown"
+    address_hash = hash_address(address)
+    username_key = f"platform:reset:{payload.username.casefold()}"
+    code = f"{secrets.randbelow(100_000_000):08d}"
+    reset_id = str(uuid.uuid4())
+    recovery_email = None
+    with database.transaction() as connection:
+        failures = connection.execute(
+            "SELECT COUNT(*) FROM login_attempts WHERE username = ? AND address_hash = ? "
+            "AND succeeded = 0 AND attempted_at > ?",
+            (username_key, address_hash, cutoff),
+        ).fetchone()[0]
+        if failures < 5:
+            connection.execute(
+                "INSERT INTO login_attempts (username, address_hash, succeeded, attempted_at) VALUES (?, ?, 0, ?)",
+                (username_key, address_hash, now_text),
+            )
+            account_row = connection.execute(
+                "SELECT id, recovery_email FROM platform_accounts WHERE username = ? AND active = 1",
+                (payload.username,),
+            ).fetchone()
+            if account_row and account_row["recovery_email"]:
+                recent_resets = connection.execute(
+                    "SELECT COUNT(*) FROM platform_password_resets WHERE account_id = ? AND created_at > ?",
+                    (account_row["id"], (now - timedelta(hours=1)).isoformat()),
+                ).fetchone()[0]
+                if recent_resets < 3:
+                    recovery_email = account_row["recovery_email"]
+                    connection.execute("DELETE FROM platform_password_resets WHERE account_id = ?", (account_row["id"],))
+                    connection.execute(
+                        "INSERT INTO platform_password_resets (id, account_id, code_hash, attempts, expires_at, created_at) "
+                        "VALUES (?, ?, ?, 0, ?, ?)",
+                        (
+                            reset_id,
+                            account_row["id"],
+                            hash_password(code),
+                            (now + timedelta(minutes=15)).isoformat(),
+                            now_text,
+                        ),
+                    )
+    if not recovery_email:
+        password_hasher.hash(payload.username)
+        return {"message": "If an active Employer account has a recovery email, a code has been sent."}
+    try:
+        send_platform_password_reset_code(recovery_email, code)
+    except (OSError, smtplib.SMTPException, RuntimeError):
+        logger.exception("Failed to send an Employer password reset email")
+        with database.transaction() as connection:
+            connection.execute("DELETE FROM platform_password_resets WHERE id = ?", (reset_id,))
+    return {"message": "If an active Employer account has a recovery email, a code has been sent."}
+
+
+@app.post("/api/platform/password/reset")
+def reset_platform_password(payload: PlatformPasswordResetConfirmRequest) -> dict[str, str]:
+    now_text = datetime.now(timezone.utc).isoformat()
+    reset_succeeded = False
+    with database.transaction() as connection:
+        account = connection.execute(
+            "SELECT id FROM platform_accounts WHERE username = ? AND active = 1",
+            (payload.username,),
+        ).fetchone()
+        reset = connection.execute(
+            "SELECT id, code_hash, attempts FROM platform_password_resets "
+            "WHERE account_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
+            (account["id"], now_text),
+        ).fetchone() if account else None
+        if reset and reset["attempts"] < 5 and verify_password(reset["code_hash"], payload.code):
+            connection.execute(
+                "UPDATE platform_accounts SET password_hash = ? WHERE id = ?",
+                (hash_password(payload.password), account["id"]),
+            )
+            connection.execute("DELETE FROM platform_sessions WHERE account_id = ?", (account["id"],))
+            connection.execute("DELETE FROM platform_password_resets WHERE account_id = ?", (account["id"],))
+            database.write_audit(connection, None, "platform.password_reset", "platform_account", account["id"])
+            reset_succeeded = True
+        elif reset:
+            connection.execute(
+                "UPDATE platform_password_resets SET attempts = attempts + 1 WHERE id = ?",
+                (reset["id"],),
+            )
+    if not reset_succeeded:
+        raise HTTPException(status_code=400, detail="The reset code is invalid or expired.")
+    return {"status": "reset"}
+
+
+def send_platform_password_reset_code(email_address: str, code: str) -> None:
+    if not config.HOSTEL_SMTP_HOST or not config.HOSTEL_SMTP_FROM:
+        raise RuntimeError("Employer password recovery email is not configured.")
+    message = EmailMessage()
+    message["Subject"] = "Your Haven Hostel password reset code"
+    message["From"] = config.HOSTEL_SMTP_FROM
+    message["To"] = email_address
+    message.set_content(
+        f"Your Haven Hostel Employer password reset code is {code}. "
+        "It expires in 15 minutes. If you did not request this code, you can ignore this email."
+    )
+    smtp_class = smtplib.SMTP_SSL if config.HOSTEL_SMTP_USE_SSL else smtplib.SMTP
+    smtp_options = {"timeout": 10}
+    if config.HOSTEL_SMTP_USE_SSL:
+        smtp_options["context"] = ssl.create_default_context()
+    with smtp_class(config.HOSTEL_SMTP_HOST, config.HOSTEL_SMTP_PORT, **smtp_options) as smtp:
+        if not config.HOSTEL_SMTP_USE_SSL:
+            smtp.ehlo()
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.ehlo()
+        if config.HOSTEL_SMTP_USERNAME:
+            smtp.login(config.HOSTEL_SMTP_USERNAME, config.HOSTEL_SMTP_PASSWORD)
+        smtp.send_message(message)
         database.write_audit(connection, None, "auth.login_failed", "staff", None, {"username": username[:40]})
         connection.execute(
             "DELETE FROM login_attempts WHERE attempted_at < ?",

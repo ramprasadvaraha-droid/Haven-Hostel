@@ -24,6 +24,8 @@ The public landing page links to separate Employer and Hostel Owner portals. Boo
 
 The employer dashboard tracks platform subscription invoices by owner and billing month, including pending and received amounts. Resident payment counts and balances remain owner-scoped in the Hostel Owner dashboard. Subscription invoices are recorded manually by an employer; recording one does not initiate a payment transaction.
 
+Employer accounts can change their password while signed in or use **Forgot password?** to receive a time-limited code at their recovery email. Configure `HOSTEL_SMTP_HOST`, `HOSTEL_SMTP_PORT` (587 for STARTTLS or 465 with `HOSTEL_SMTP_USE_SSL=true`), `HOSTEL_SMTP_USERNAME`, `HOSTEL_SMTP_PASSWORD`, and `HOSTEL_SMTP_FROM` in the Vercel Production environment. New Employer accounts created with `python -m app.manage create-platform-admin` require a recovery email. Add or update an existing account's recovery email from a trusted terminal with `python -m app.manage set-platform-recovery-email --username USERNAME`.
+
 New admin and staff passwords must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character. This applies to dashboard signup, staff creation, and CLI password creation or reset; existing passwords remain valid for sign-in.
 
 ## WhatsApp bookings and vacancy QR
