@@ -40,6 +40,7 @@ IMAGE_SIGNATURES = {
     "image/png": lambda data: data.startswith(b"\x89PNG\r\n\x1a\n"),
     "image/webp": lambda data: len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
 }
+REGISTRATION_TERMS_VERSION = "hostel-rules-v1"
 
 
 class LoginRequest(BaseModel):
@@ -795,6 +796,7 @@ def serialize_resident(row: sqlite3.Row, documents: list[dict[str, str]]) -> dic
         "payment_status": row["payment_status"],
         "amount_due_paise": row["amount_due_paise"],
         "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
+        "terms_accepted_at": row["terms_accepted_at"],
         "documents": documents,
     }
 
@@ -804,7 +806,10 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
     with database.read_connection() as connection:
         rows = connection.execute(
             "SELECT resident.*, room.room_number, floor.floor_number, hostel.id AS hostel_id, "
-            "hostel.name AS hostel_name FROM residents resident "
+            "hostel.name AS hostel_name, "
+            "(SELECT MAX(application.terms_accepted_at) FROM registration_applications application "
+            "WHERE application.resident_id = resident.id) AS terms_accepted_at "
+            "FROM residents resident "
             "JOIN rooms room ON room.id = resident.room_id "
             "JOIN floors floor ON floor.id = room.floor_id "
             "JOIN hostels hostel ON hostel.id = floor.hostel_id "
@@ -2707,6 +2712,8 @@ def registration_workspace(staff: dict[str, str] = Depends(require_admin_read)) 
                 "hostel_name": row["hostel_name"],
                 "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
                 "submitted_at": row["submitted_at"],
+                "terms_accepted_at": row["terms_accepted_at"],
+                "terms_version": row["terms_version"],
                 "documents": documents,
             }
         )
@@ -2821,6 +2828,8 @@ async def submit_join_registration(
     mobile: str = Form(min_length=10, max_length=20),
     aadhaar: str = Form(default="", max_length=14),
     consent: str = Form(),
+    terms_accepted: str = Form(default=""),
+    terms_version: str = Form(default=""),
     whatsapp_opt_in: bool = Form(default=False),
     person_photo: UploadFile | None = File(default=None),
     aadhaar_photo: UploadFile | None = File(default=None),
@@ -2835,6 +2844,10 @@ async def submit_join_registration(
         raise HTTPException(status_code=422, detail="Aadhaar must contain 12 digits when provided.")
     if consent.lower() not in {"true", "on", "yes", "1"}:
         raise HTTPException(status_code=422, detail="Consent is required to submit this registration.")
+    if terms_accepted.lower() not in {"true", "on", "yes", "1"}:
+        raise HTTPException(status_code=422, detail="You must accept the hostel rules and regulations.")
+    if terms_version != REGISTRATION_TERMS_VERSION:
+        raise HTTPException(status_code=409, detail="The hostel rules have changed. Refresh this page and review them.")
 
     person_image = await read_optional_image(person_photo, "Person photo")
     aadhaar_image = await read_optional_image(aadhaar_photo, "Aadhaar photo")
@@ -2861,8 +2874,9 @@ async def submit_join_registration(
             connection.execute(
                 "INSERT INTO registration_applications "
                 "(id, invite_id, hostel_id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, whatsapp_opt_in, "
+                "terms_accepted_at, terms_version, "
                 "person_photo_path, person_photo_media_type, aadhaar_photo_path, aadhaar_photo_media_type, submitted_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     application_id,
                     invite["id"],
@@ -2871,6 +2885,8 @@ async def submit_join_registration(
                     encrypt_text(normalized_mobile),
                     encrypt_text(normalized_aadhaar) if normalized_aadhaar else None,
                     int(whatsapp_opt_in),
+                    now,
+                    REGISTRATION_TERMS_VERSION,
                     stored_documents.get("person_photo", (None, None))[0],
                     stored_documents.get("person_photo", (None, None))[1],
                     stored_documents.get("aadhaar_photo", (None, None))[0],
@@ -2884,7 +2900,11 @@ async def submit_join_registration(
                 "registration.application.submit",
                 "registration_application",
                 application_id,
-                {"hostel_id": invite["hostel_id"]},
+                {
+                    "hostel_id": invite["hostel_id"],
+                    "terms_version": REGISTRATION_TERMS_VERSION,
+                    "terms_accepted_at": now,
+                },
             )
     except Exception:
         for encrypted_path, _ in stored_documents.values():

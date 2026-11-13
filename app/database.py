@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS registration_applications (
     mobile_ciphertext TEXT NOT NULL,
     aadhaar_ciphertext TEXT,
     whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1)),
+    terms_accepted_at TEXT,
+    terms_version TEXT,
     person_photo_path TEXT,
     person_photo_media_type TEXT,
     aadhaar_photo_path TEXT,
@@ -428,6 +430,16 @@ def initialize_database() -> None:
             )
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (13, ?) ON CONFLICT DO NOTHING",
+                (now,),
+            )
+            connection.execute(
+                "ALTER TABLE registration_applications ADD COLUMN IF NOT EXISTS terms_accepted_at TEXT"
+            )
+            connection.execute(
+                "ALTER TABLE registration_applications ADD COLUMN IF NOT EXISTS terms_version TEXT"
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (14, ?) ON CONFLICT DO NOTHING",
                 (now,),
             )
         return
@@ -728,6 +740,21 @@ def initialize_database() -> None:
                     )
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (13, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_fourteen = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 14"
+            ).fetchone()
+            if not migration_fourteen:
+                application_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(registration_applications)").fetchall()
+                }
+                if "terms_accepted_at" not in application_columns:
+                    connection.execute("ALTER TABLE registration_applications ADD COLUMN terms_accepted_at TEXT")
+                if "terms_version" not in application_columns:
+                    connection.execute("ALTER TABLE registration_applications ADD COLUMN terms_version TEXT")
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (14, ?)",
                     (datetime.now(timezone.utc).isoformat(),),
                 )
             connection.commit()

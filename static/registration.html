@@ -24,6 +24,12 @@
     .photo-preview { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #e6e8e1; border-radius: 5px; background: #f7f8f4; }
     .photo-preview img { width: 64px; height: 78px; border-radius: 4px; object-fit: cover; }
     .photo-preview span { color: #526055; font-size: 12px; }
+    .terms-section { padding: 16px; border: 1px solid #e6e8e1; border-radius: 6px; background: #fafbf8; }
+    .terms-section h2 { margin: 0; color: #2e604a; font-size: 17px; }
+    .terms-section h3 { margin: 0; font-size: 13px; letter-spacing: .5px; }
+    .terms-list { margin: 0; padding-left: 20px; color: #4f5951; font-size: 12px; line-height: 1.55; }
+    .terms-list li + li { margin-top: 6px; }
+    .terms-acceptance { padding-top: 12px; border-top: 1px solid #e6e8e1; }
     .consent { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5; }
     .consent input { width: 16px; min-height: 16px; margin: 2px 0 0; flex: 0 0 auto; }
     button { min-height: 43px; padding: 0 18px; border: 0; border-radius: 5px; color: #fff; background: #2e604a; font: inherit; font-weight: 700; cursor: pointer; }
@@ -48,6 +54,33 @@
         <div class="field"><label for="guest-aadhaar">Aadhaar number <span class="help">(optional)</span></label><input id="guest-aadhaar" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off"><span class="help">Optional; if provided, it is encrypted.</span></div>
         <div class="field"><label for="guest-photo">Person photo</label><input id="guest-photo" name="person_photo" type="file" accept="image/jpeg,image/png,image/webp" required><span class="help">Required. JPEG, PNG, or WebP; up to 5 MB.</span><div class="photo-preview" data-photo-preview-for="guest-photo" hidden><img alt="Selected person photo preview"><span>Check that this is the correct photo before submitting.</span></div></div>
         <div class="field"><label for="aadhaar-photo">Aadhaar photo <span class="help">(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/jpeg,image/png,image/webp"><span class="help">JPEG, PNG, or WebP; up to 5 MB.</span><div class="photo-preview" data-photo-preview-for="aadhaar-photo" hidden><img alt="Selected Aadhaar photo preview"><span>Check that this is the correct image before submitting.</span></div></div>
+        <section class="terms-section field full" aria-labelledby="registration-terms-title">
+          <h2 id="registration-terms-title">JUST FEEL LIKE HOME</h2>
+          <h3>RULES &amp; REGULATIONS</h3>
+          <ol class="terms-list">
+            <li>Please submit your photo ID and address proof when joining the PG.</li>
+            <li>Management is not responsible for residents' personal belongings. Keep valuables such as mobile phones, cash, gold, and laptops safely secured.</li>
+            <li>Give management at least 15 days' notice before leaving the hostel; otherwise, the advance will not be refunded.</li>
+            <li>Rent is due on or before the 5th of each calendar month. Late payment may attract a penalty based on the number of calendar days late.</li>
+            <li>All visitors must enter their name, address, and mobile number in the register. Visitors are not allowed after 12:00 a.m. Residents working night shifts must inform management in advance.</li>
+            <li>Token advance rent is non-refundable once paid.</li>
+            <li>Inform management in advance about guest arrivals. Guest accommodation costs INR 500 per day, with or without food.</li>
+            <li>Use dustbins and keep your surroundings neat and clean.</li>
+            <li>Liquor consumption and smoking are strictly prohibited inside rooms and the PG.</li>
+            <li>Iron boxes are not allowed inside the PG. Submit your iron box to management before joining and collect it when vacating.</li>
+            <li>Please avoid wasting electricity, food, and water.</li>
+            <li>Maintain silence in and around the PG, as families live nearby.</li>
+            <li>Management may inspect rooms through wardens or supervisors at any time.</li>
+            <li>If misconduct is observed, management may ask you to vacate the PG within five days.</li>
+            <li>A maintenance charge of INR 1,000 will be collected when vacating the PG.</li>
+            <li>CCTV cameras are used to monitor the PG premises.</li>
+            <li>Close the main gates and doors properly, especially when returning during night shifts.</li>
+            <li>Do not mistreat other residents. Management may take appropriate action if this rule is violated.</li>
+            <li>Return your room keys to the key board when leaving. Charges may apply for lost keys.</li>
+          </ol>
+          <input type="hidden" name="terms_version" value="hostel-rules-v1">
+          <label class="consent terms-acceptance"><input name="terms_accepted" type="checkbox" value="true" required><span>I have read, understood, and agree to follow these rules and regulations.</span></label>
+        </section>
         <div class="field full">
           <label class="consent"><input name="consent" type="checkbox" required><span>I agree to share these details and any uploaded photos with the hostel owner for registration review.</span></label>
           <p class="privacy">Your details and photos are stored encrypted. Room assignment and check-in are confirmed by the owner after approval.</p>

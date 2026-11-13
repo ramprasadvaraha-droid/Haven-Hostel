@@ -463,12 +463,43 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     registration_page = client.get(invite.json()["path"])
     assert registration_page.status_code == 200
     assert 'data-photo-preview-for="guest-photo"' in registration_page.text
+    assert registration_page.text.count("<li>") == 19
+    assert 'name="terms_accepted" type="checkbox" value="true" required' in registration_page.text
     assert client.get(f"/api/join/{token}").json() == {"hostel_name": "Test Hostel"}
     missing_photo = client.post(
         f"/api/join/{token}",
-        data={"name": "New Joiner", "mobile": "9876543210", "consent": "true"},
+        data={
+            "name": "New Joiner",
+            "mobile": "9876543210",
+            "consent": "true",
+            "terms_accepted": "true",
+            "terms_version": "hostel-rules-v1",
+        },
     )
     assert missing_photo.status_code == 422
+
+    missing_terms_acceptance = client.post(
+        f"/api/join/{token}",
+        data={
+            "name": "New Joiner",
+            "mobile": "9876543210",
+            "consent": "true",
+            "terms_version": "hostel-rules-v1",
+        },
+        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+    )
+    assert missing_terms_acceptance.status_code == 422
+    outdated_terms = client.post(
+        f"/api/join/{token}",
+        data={
+            "name": "New Joiner",
+            "mobile": "9876543210",
+            "consent": "true",
+            "terms_accepted": "true",
+            "terms_version": "old-version",
+        },
+    )
+    assert outdated_terms.status_code == 409
 
     submitted = client.post(
         f"/api/join/{token}",
@@ -477,6 +508,8 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
             "mobile": "98765 43210",
             "aadhaar": "123456789012",
             "consent": "true",
+            "terms_accepted": "true",
+            "terms_version": "hostel-rules-v1",
             "whatsapp_opt_in": "true",
         },
         files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
@@ -493,6 +526,8 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     assert application["mobile"] == "+919876543210"
     assert application["aadhaar_last4"] == "9012"
     assert application["whatsapp_opt_in"] is True
+    assert application["terms_accepted_at"]
+    assert application["terms_version"] == "hostel-rules-v1"
     assert application["documents"][0]["kind"] == "person_photo"
     application_preview = client.get(application["documents"][0]["preview_url"])
     assert application_preview.status_code == 200
@@ -501,13 +536,15 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     assert application_preview.headers["cache-control"] == "no-store"
     with database.read_connection() as connection:
         stored_application = connection.execute(
-            "SELECT name_ciphertext, mobile_ciphertext, aadhaar_ciphertext "
+            "SELECT name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, terms_accepted_at, terms_version "
             "FROM registration_applications WHERE id = ?",
             (application["id"],),
         ).fetchone()
     assert stored_application["name_ciphertext"] != "New Joiner"
     assert stored_application["mobile_ciphertext"] != "+919876543210"
     assert stored_application["aadhaar_ciphertext"] != "123456789012"
+    assert stored_application["terms_accepted_at"] == application["terms_accepted_at"]
+    assert stored_application["terms_version"] == "hostel-rules-v1"
 
     approval_payload = {
         "bed_number": 3,
@@ -533,6 +570,7 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     assert resident["room"] == "101"
     assert resident["bed_number"] == 3
     assert resident["whatsapp_opt_in"] is True
+    assert resident["terms_accepted_at"] == application["terms_accepted_at"]
     assert [document["kind"] for document in resident["documents"]] == ["person_photo"]
     resident_preview = client.get(resident["documents"][0]["preview_url"])
     assert resident_preview.status_code == 200
