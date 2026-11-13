@@ -876,7 +876,11 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
     documents_by_resident: dict[str, list[dict[str, str]]] = {}
     for document in documents:
         documents_by_resident.setdefault(document["resident_id"], []).append(
-            {"kind": document["kind"], "url": f"/api/documents/{document['id']}"}
+            {
+                "kind": document["kind"],
+                "url": f"/api/documents/{document['id']}",
+                "preview_url": f"/api/documents/{document['id']}?inline=true",
+            }
         )
     resident_data = [serialize_resident(row, documents_by_resident.get(row["id"], [])) for row in rows]
     residents_by_room: dict[str, set[int]] = {}
@@ -2682,6 +2686,7 @@ def registration_workspace(staff: dict[str, str] = Depends(require_admin_read)) 
                 {
                     "kind": "person_photo",
                     "url": f"/api/registration-applications/{row['id']}/documents/person_photo",
+                    "preview_url": f"/api/registration-applications/{row['id']}/documents/person_photo?inline=true",
                 }
             )
         if row["aadhaar_photo_path"]:
@@ -2689,6 +2694,7 @@ def registration_workspace(staff: dict[str, str] = Depends(require_admin_read)) 
                 {
                     "kind": "aadhaar_photo",
                     "url": f"/api/registration-applications/{row['id']}/documents/aadhaar_photo",
+                    "preview_url": f"/api/registration-applications/{row['id']}/documents/aadhaar_photo?inline=true",
                 }
             )
         applications.append(
@@ -2891,6 +2897,7 @@ async def submit_join_registration(
 def download_registration_document(
     application_id: str,
     kind: str,
+    inline: bool = Query(default=False),
     staff: dict[str, str] = Depends(require_admin_read),
 ) -> Response:
     path_column = {
@@ -2913,10 +2920,12 @@ def download_registration_document(
         ).fetchone()
         if not row or not row["encrypted_path"]:
             raise HTTPException(status_code=404, detail="Registration document not found.")
+        if inline and row["media_type"] not in IMAGE_SIGNATURES:
+            raise HTTPException(status_code=415, detail="Only image documents can be previewed.")
         database.write_audit(
             connection,
             staff["id"],
-            "registration.document.download",
+            "registration.document.preview" if inline else "registration.document.download",
             "registration_application",
             application_id,
             {"kind": kind},
@@ -2924,7 +2933,11 @@ def download_registration_document(
     return Response(
         content=read_document(row["encrypted_path"]),
         media_type=row["media_type"],
-        headers={"Content-Disposition": "attachment; filename=registration-document", "Cache-Control": "no-store"},
+        headers={
+            "Content-Disposition": f"{'inline' if inline else 'attachment'}; filename=registration-document",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -3375,7 +3388,11 @@ def checkout_resident(resident_id: str, staff: dict[str, str] = Depends(require_
 
 
 @app.get("/api/documents/{document_id}")
-def download_document(document_id: str, staff: dict[str, str] = Depends(current_staff)) -> Response:
+def download_document(
+    document_id: str,
+    inline: bool = Query(default=False),
+    staff: dict[str, str] = Depends(current_staff),
+) -> Response:
     with database.transaction() as connection:
         row = connection.execute(
             "SELECT document.encrypted_path, document.media_type, document.resident_id FROM documents document "
@@ -3387,10 +3404,12 @@ def download_document(document_id: str, staff: dict[str, str] = Depends(current_
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Document not found.")
+        if inline and row["media_type"] not in IMAGE_SIGNATURES:
+            raise HTTPException(status_code=415, detail="Only image documents can be previewed.")
         database.write_audit(
             connection,
             staff["id"],
-            "document.download",
+            "document.preview" if inline else "document.download",
             "document",
             document_id,
             {"resident_id": row["resident_id"]},
@@ -3398,7 +3417,11 @@ def download_document(document_id: str, staff: dict[str, str] = Depends(current_
     return Response(
         content=read_document(row["encrypted_path"]),
         media_type=row["media_type"],
-        headers={"Content-Disposition": "attachment; filename=resident-document", "Cache-Control": "no-store"},
+        headers={
+            "Content-Disposition": f"{'inline' if inline else 'attachment'}; filename=resident-document",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

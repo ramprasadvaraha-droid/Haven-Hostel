@@ -460,7 +460,9 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     )
     assert invite.status_code == 201
     token = invite.json()["path"].split("/")[-1]
-    assert client.get(invite.json()["path"]).status_code == 200
+    registration_page = client.get(invite.json()["path"])
+    assert registration_page.status_code == 200
+    assert 'data-photo-preview-for="guest-photo"' in registration_page.text
     assert client.get(f"/api/join/{token}").json() == {"hostel_name": "Test Hostel"}
     missing_photo = client.post(
         f"/api/join/{token}",
@@ -492,6 +494,11 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     assert application["aadhaar_last4"] == "9012"
     assert application["whatsapp_opt_in"] is True
     assert application["documents"][0]["kind"] == "person_photo"
+    application_preview = client.get(application["documents"][0]["preview_url"])
+    assert application_preview.status_code == 200
+    assert application_preview.content == PERSON_PNG
+    assert application_preview.headers["content-disposition"].startswith("inline")
+    assert application_preview.headers["cache-control"] == "no-store"
     with database.read_connection() as connection:
         stored_application = connection.execute(
             "SELECT name_ciphertext, mobile_ciphertext, aadhaar_ciphertext "
@@ -527,7 +534,11 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     assert resident["bed_number"] == 3
     assert resident["whatsapp_opt_in"] is True
     assert [document["kind"] for document in resident["documents"]] == ["person_photo"]
-    assert client.get(resident["documents"][0]["url"]).content == PERSON_PNG
+    resident_preview = client.get(resident["documents"][0]["preview_url"])
+    assert resident_preview.status_code == 200
+    assert resident_preview.content == PERSON_PNG
+    assert resident_preview.headers["content-disposition"].startswith("inline")
+    assert client.get(resident["documents"][0]["url"]).headers["content-disposition"].startswith("attachment")
     assert client.get("/api/registration-workspace").json()["applications"] == []
 
 

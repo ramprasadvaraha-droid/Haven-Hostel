@@ -407,7 +407,7 @@
     if (!resident.documents.length) return 'No photos';
     return resident.documents.map(document => {
       const label = document.kind === 'person_photo' ? 'Person photo' : 'Aadhaar photo';
-      return `<a class="document-link" href="${escapeHTML(document.url)}" target="_blank" rel="noopener">${label}</a>`;
+      return `<a class="document-link" href="${escapeHTML(document.preview_url)}" target="_blank" rel="noopener">View ${label}</a> · <a class="document-link" href="${escapeHTML(document.url)}" download>Download</a>`;
     }).join(' · ');
   }
 
@@ -499,8 +499,12 @@
       ? pending.map(application => {
         const availableRooms = state.rooms.filter(room => room.hostel_id === application.hostel_id && room.available_beds > 0 && !room.reserved);
         const documents = application.documents.length
-          ? application.documents.map(document => `<a class="document-link" href="${escapeHTML(document.url)}" target="_blank" rel="noopener">${document.kind === 'person_photo' ? 'Person photo' : 'Aadhaar photo'}</a>`).join(' · ')
+          ? application.documents.filter(document => document.kind !== 'person_photo').map(document => `<a class="document-link" href="${escapeHTML(document.url)}" target="_blank" rel="noopener">Download Aadhaar photo</a>`).join(' · ')
           : 'No photos provided';
+        const personPhoto = application.documents.find(document => document.kind === 'person_photo');
+        const photoPreview = personPhoto
+          ? `<a class="registration-photo-preview" href="${escapeHTML(personPhoto.preview_url)}" target="_blank" rel="noopener"><img src="${escapeHTML(personPhoto.preview_url)}" alt="Person photo uploaded by ${escapeHTML(application.name)}" loading="lazy"><span>Open full photo</span></a>`
+          : '';
         const roomOptions = availableRooms.map(room => `<option value="${escapeHTML(room.id)}">${escapeHTML(room.hostel_name)} · Room ${escapeHTML(room.room_number)} · ${room.available_beds} bed${room.available_beds === 1 ? '' : 's'} available</option>`).join('');
         const firstRoom = availableRooms[0];
         const availableBeds = firstRoom ? firstRoom.beds.filter(bed => !bed.occupied && !bed.reserved) : [];
@@ -508,7 +512,7 @@
         const approveForm = availableRooms.length
           ? `<form data-registration-approval="${escapeHTML(application.id)}"><div class="registration-approval-grid"><div class="field"><label>Room</label><select name="room_id" data-registration-room required>${roomOptions}</select></div><div class="field"><label>Bed</label><select name="bed_number" data-registration-bed required>${availableBeds.map(bed => `<option value="${bed.number}">Bed ${bed.number}</option>`).join('')}</select></div><div class="field"><label>Joining date</label><input name="joining_date" type="date" value="${today}" required></div><div class="field"><label>Payment status</label><select name="payment_status" data-registration-payment required><option value="" selected disabled>Choose</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></div><div class="field" data-registration-amount-field hidden><label>Balance due (INR)</label><input name="amount_due" type="number" min="0.01" max="1000000" step="0.01"></div></div><div class="registration-actions"><button class="primary-button" type="submit">Approve and check in</button></div></form>`
           : '<div class="registration-status">Add an available bed in this hostel before approving and assigning a room.</div>';
-        return `<article class="registration-card"><div class="registration-card-head"><div><h3 class="registration-card-title">${escapeHTML(application.name)}</h3><div class="registration-card-meta">${escapeHTML(application.mobile)}${application.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(application.aadhaar_last4)}` : ''}<br>${escapeHTML(application.hostel_name)} · Submitted ${escapeHTML(submitted)} · WhatsApp updates ${application.whatsapp_opt_in ? 'opted in' : 'not opted in'}<br>${documents}</div></div></div>${approveForm}</article>`;
+        return `<article class="registration-card"><div class="registration-card-head"><div><h3 class="registration-card-title">${escapeHTML(application.name)}</h3><div class="registration-card-meta">${escapeHTML(application.mobile)}${application.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(application.aadhaar_last4)}` : ''}<br>${escapeHTML(application.hostel_name)} · Submitted ${escapeHTML(submitted)} · WhatsApp updates ${application.whatsapp_opt_in ? 'opted in' : 'not opted in'}<br>${documents}</div></div>${photoPreview}</div>${approveForm}</article>`;
       }).join('')
       : '<div class="table-empty">No pending applications.</div>';
   }

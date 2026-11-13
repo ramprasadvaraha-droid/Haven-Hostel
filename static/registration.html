@@ -21,6 +21,9 @@
     input { width: 100%; min-height: 42px; padding: 9px 10px; border: 1px solid #d5dad4; border-radius: 5px; font: inherit; }
     input[type="file"] { padding: 7px; }
     .help, .privacy { margin: 0; color: #6d766e; font-size: 12px; }
+    .photo-preview { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #e6e8e1; border-radius: 5px; background: #f7f8f4; }
+    .photo-preview img { width: 64px; height: 78px; border-radius: 4px; object-fit: cover; }
+    .photo-preview span { color: #526055; font-size: 12px; }
     .consent { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5; }
     .consent input { width: 16px; min-height: 16px; margin: 2px 0 0; flex: 0 0 auto; }
     button { min-height: 43px; padding: 0 18px; border: 0; border-radius: 5px; color: #fff; background: #2e604a; font: inherit; font-weight: 700; cursor: pointer; }
@@ -43,8 +46,8 @@
         <div class="field full"><label for="guest-name">Full name</label><input id="guest-name" name="name" autocomplete="name" maxlength="80" required></div>
         <div class="field"><label for="guest-mobile">Mobile number</label><input id="guest-mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" minlength="10" maxlength="20" placeholder="10-digit Indian number (defaults to +91)" required></div>
         <div class="field"><label for="guest-aadhaar">Aadhaar number <span class="help">(optional)</span></label><input id="guest-aadhaar" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off"><span class="help">Optional; if provided, it is encrypted.</span></div>
-        <div class="field"><label for="guest-photo">Person photo</label><input id="guest-photo" name="person_photo" type="file" accept="image/jpeg,image/png,image/webp" required><span class="help">Required. JPEG, PNG, or WebP; up to 5 MB.</span></div>
-        <div class="field"><label for="aadhaar-photo">Aadhaar photo <span class="help">(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/jpeg,image/png,image/webp"><span class="help">JPEG, PNG, or WebP; up to 5 MB.</span></div>
+        <div class="field"><label for="guest-photo">Person photo</label><input id="guest-photo" name="person_photo" type="file" accept="image/jpeg,image/png,image/webp" required><span class="help">Required. JPEG, PNG, or WebP; up to 5 MB.</span><div class="photo-preview" data-photo-preview-for="guest-photo" hidden><img alt="Selected person photo preview"><span>Check that this is the correct photo before submitting.</span></div></div>
+        <div class="field"><label for="aadhaar-photo">Aadhaar photo <span class="help">(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/jpeg,image/png,image/webp"><span class="help">JPEG, PNG, or WebP; up to 5 MB.</span><div class="photo-preview" data-photo-preview-for="aadhaar-photo" hidden><img alt="Selected Aadhaar photo preview"><span>Check that this is the correct image before submitting.</span></div></div>
         <div class="field full">
           <label class="consent"><input name="consent" type="checkbox" required><span>I agree to share these details and any uploaded photos with the hostel owner for registration review.</span></label>
           <p class="privacy">Your details and photos are stored encrypted. Room assignment and check-in are confirmed by the owner after approval.</p>
