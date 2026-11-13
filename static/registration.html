@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f4ef">
+  <title>Guest registration | Haven Hostel</title>
+  <style>
+    :root { color-scheme: light; font-family: "Segoe UI", sans-serif; color: #202722; background: #f4f4ef; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px 16px; }
+    main { width: min(620px, 100%); margin: 0 auto; padding: 28px; border: 1px solid #e6e8e1; border-radius: 8px; background: #fff; }
+    h1 { margin: 0; font-size: 25px; }
+    p { color: #667068; line-height: 1.55; }
+    .eyebrow { margin: 0 0 8px; color: #2e604a; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+    .hostel { color: #2e604a; font-weight: 700; }
+    .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+    .field { display: grid; align-content: start; gap: 7px; }
+    .field.full { grid-column: 1 / -1; }
+    label { font-size: 13px; font-weight: 650; }
+    input { width: 100%; min-height: 42px; padding: 9px 10px; border: 1px solid #d5dad4; border-radius: 5px; font: inherit; }
+    input[type="file"] { padding: 7px; }
+    .help, .privacy { margin: 0; color: #6d766e; font-size: 12px; }
+    .consent { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5; }
+    .consent input { width: 16px; min-height: 16px; margin: 2px 0 0; flex: 0 0 auto; }
+    button { min-height: 43px; padding: 0 18px; border: 0; border-radius: 5px; color: #fff; background: #2e604a; font: inherit; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .submit-row { display: flex; justify-content: flex-end; margin-top: 20px; }
+    .message { margin: 16px 0 0; padding: 12px; border-radius: 5px; background: #edf3ee; color: #284535; }
+    .message.error { background: #fff0ed; color: #8e3527; }
+    [hidden] { display: none !important; }
+    @media (max-width: 560px) { body { padding: 16px 10px; } main { padding: 20px 16px; } .fields { grid-template-columns: 1fr; } .field.full { grid-column: auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Haven Hostel · Guest registration</p>
+    <h1>Tell us about yourself</h1>
+    <p>Complete this form for <span class="hostel" id="hostel-name">your hostel</span>. The owner will review your details before confirming your stay. You do not need a hostel app account.</p>
+    <div id="registration-message" class="message" role="status" hidden></div>
+    <form id="registration-form" hidden>
+      <div class="fields">
+        <div class="field full"><label for="guest-name">Full name</label><input id="guest-name" name="name" autocomplete="name" maxlength="80" required></div>
+        <div class="field"><label for="guest-mobile">Mobile number</label><input id="guest-mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" minlength="10" maxlength="20" placeholder="10-digit Indian number (defaults to +91)" required></div>
+        <div class="field"><label for="guest-aadhaar">Aadhaar number <span class="help">(optional)</span></label><input id="guest-aadhaar" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off"><span class="help">Optional; if provided, it is encrypted.</span></div>
+        <div class="field"><label for="guest-photo">Person photo</label><input id="guest-photo" name="person_photo" type="file" accept="image/jpeg,image/png,image/webp" required><span class="help">Required. JPEG, PNG, or WebP; up to 5 MB.</span></div>
+        <div class="field"><label for="aadhaar-photo">Aadhaar photo <span class="help">(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/jpeg,image/png,image/webp"><span class="help">JPEG, PNG, or WebP; up to 5 MB.</span></div>
+        <div class="field full">
+          <label class="consent"><input name="consent" type="checkbox" required><span>I agree to share these details and any uploaded photos with the hostel owner for registration review.</span></label>
+          <p class="privacy">Your details and photos are stored encrypted. Room assignment and check-in are confirmed by the owner after approval.</p>
+        </div>
+        <div class="field full">
+          <label class="consent"><input name="whatsapp_opt_in" type="checkbox" value="true"><span>Optional: I agree to receive hostel announcements and updates by WhatsApp. I can opt out later.</span></label>
+        </div>
+      </div>
+      <div class="submit-row"><button type="submit">Submit registration</button></div>
+    </form>
+  </main>
+  <script src="/static/registration.js" defer></script>
+</body>
+</html>

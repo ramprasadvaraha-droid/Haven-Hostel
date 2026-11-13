@@ -1,5 +1,9 @@
+import json
+import os
+import re
 import sqlite3
 import zipfile
+from contextlib import nullcontext
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -8,8 +12,9 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
-from app import config, database, storage
-from app.backup import create_backup
+from app import backup as backup_module
+from app import config, database, main as main_module, storage
+from app.backup import BACKUP_TABLES, create_backup, create_postgres_backup
 from app.database import POSTGRES_SCHEMA, prepare_postgres_statement
 from app.main import app, due_date_after_one_month
 from app.security import decrypt_bytes, encrypt_text, hash_password, password_policy_error, verify_password
@@ -26,6 +31,7 @@ ADMIN_PASSWORD = "test-only-strong-password"
 def isolate_tests_from_production(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(config, "DATABASE_URL", "")
     monkeypatch.setattr(config, "BLOB_READ_WRITE_TOKEN", "")
+    monkeypatch.setattr(config, "VERCEL_DEPLOYMENT", False)
     monkeypatch.setenv("HOSTEL_ENCRYPTION_KEY", Fernet.generate_key().decode("ascii"))
 
 
@@ -92,6 +98,85 @@ def login_platform(client: TestClient) -> str:
     return login.json()["csrf_token"]
 
 
+def test_floor_metadata_migration_preserves_existing_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    data_dir = tmp_path / "migration-data"
+    monkeypatch.setattr(config, "DATABASE_URL", "")
+    monkeypatch.setattr(config, "DATA_DIR", data_dir)
+    monkeypatch.setattr(config, "DATABASE_PATH", data_dir / "hostel.sqlite3")
+    database.initialize_database()
+
+    with sqlite3.connect(config.DATABASE_PATH) as connection:
+        connection.execute("ALTER TABLE hostels DROP COLUMN ac_type")
+        connection.execute("ALTER TABLE hostels DROP COLUMN address_ciphertext")
+        connection.execute("ALTER TABLE hostels DROP COLUMN location_ciphertext")
+        connection.execute("ALTER TABLE hostels DROP COLUMN owner_mobile_ciphertext")
+        connection.execute("ALTER TABLE floors DROP COLUMN floor_type")
+        connection.execute("DROP INDEX active_floor_number")
+        connection.execute("ALTER TABLE floors DROP COLUMN active")
+        connection.execute("ALTER TABLE rooms DROP COLUMN ac_type")
+        connection.execute("DROP TABLE room_type_charges")
+        connection.execute(
+            "CREATE TABLE room_type_charges ("
+            "hostel_id TEXT NOT NULL REFERENCES hostels(id) ON DELETE CASCADE, "
+            "share_count INTEGER NOT NULL CHECK (share_count BETWEEN 1 AND 4), "
+            "monthly_rent_paise INTEGER NOT NULL CHECK (monthly_rent_paise >= 0), updated_at TEXT NOT NULL, "
+            "PRIMARY KEY (hostel_id, share_count))"
+        )
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11)")
+    with database.transaction() as connection:
+        connection.execute(
+            "INSERT INTO staff (id, owner_id, username, password_hash, role, created_at) "
+            "VALUES (?, ?, ?, ?, 'admin', ?)",
+            ("migration-owner", "migration-owner", "migration-owner", "hash", "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO hostels (id, owner_id, name, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("migration-hostel", "migration-owner", "Migration Hostel", "migration-owner", "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO floors (id, hostel_id, floor_number, created_at) VALUES (?, ?, ?, ?)",
+            ("migration-floor", "migration-hostel", 1, "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO rooms (id, floor_id, room_number, share_count, monthly_rent_paise, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("migration-room", "migration-floor", "101", 2, 900000, "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO room_type_charges (hostel_id, share_count, monthly_rent_paise, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("migration-hostel", 2, 900000, "2026-01-01T00:00:00+00:00"),
+        )
+
+    database.initialize_database()
+    with database.read_connection() as connection:
+        hostel = connection.execute(
+            "SELECT ac_type, address_ciphertext, location_ciphertext, owner_mobile_ciphertext "
+            "FROM hostels WHERE id = ?",
+            ("migration-hostel",),
+        ).fetchone()
+        floor = connection.execute(
+            "SELECT floor_type, active FROM floors WHERE id = ?", ("migration-floor",)
+        ).fetchone()
+        room = connection.execute(
+            "SELECT ac_type FROM rooms WHERE id = ?", ("migration-room",)
+        ).fetchone()
+        charge = connection.execute(
+            "SELECT ac_type, monthly_rent_paise FROM room_type_charges "
+            "WHERE hostel_id = ? AND share_count = ?",
+            ("migration-hostel", 2),
+        ).fetchone()
+    assert hostel["ac_type"] == "mixed"
+    assert hostel["address_ciphertext"] is None
+    assert hostel["location_ciphertext"] is None
+    assert hostel["owner_mobile_ciphertext"] is None
+    assert floor["floor_type"] == "standard"
+    assert floor["active"] == 1
+    assert room["ac_type"] == "non_ac"
+    assert charge["ac_type"] == "non_ac"
+    assert charge["monthly_rent_paise"] == 900000
+
+
 def test_dashboard_returns_five_latest_checkins_and_checkouts(logged_in_client):
     client, _ = logged_in_client
     with database.transaction() as connection:
@@ -126,6 +211,24 @@ def test_password_policy_accepts_eight_character_mixed_password():
     assert password_policy_error("A1!bcdef") is None
 
 
+def test_encryption_key_prefers_local_file_over_invalid_shell_value(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import app.setup as setup_module
+    from dotenv import load_dotenv
+
+    valid_key = Fernet.generate_key().decode("ascii")
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"HOSTEL_ENCRYPTION_KEY={valid_key}\nHOSTEL_COOKIE_SECURE=false\n", encoding="utf-8")
+
+    monkeypatch.setenv("HOSTEL_ENCRYPTION_KEY", "not-a-valid-fernet-key")
+    monkeypatch.setattr(setup_module, "ENV_FILE", env_file)
+    load_dotenv(env_file, override=True)
+
+    key = config.encryption_key()
+
+    assert key == valid_key.encode("ascii")
+    assert os.environ["HOSTEL_ENCRYPTION_KEY"] == valid_key
+
+
 def test_private_blob_download_uses_read_write_token(monkeypatch: pytest.MonkeyPatch):
     key = Fernet.generate_key()
     monkeypatch.setenv("HOSTEL_ENCRYPTION_KEY", key.decode("ascii"))
@@ -145,8 +248,124 @@ def test_private_blob_download_uses_read_write_token(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(storage.httpx, "get", fake_get)
 
-    assert storage.read_document("https://private.blob.vercel-storage.com/secure-file.enc") == PERSON_PNG
+    assert storage.read_document("https://store.private.blob.vercel-storage.com/secure-file.enc") == PERSON_PNG
     assert request_details["headers"] == {"Authorization": "Bearer test-blob-token", "x-api-version": "7"}
+
+
+def test_blob_upload_requires_private_access(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(config, "BLOB_READ_WRITE_TOKEN", "test-blob-token")
+    request_details: dict[str, object] = {}
+
+    class BlobResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"url": "https://store.private.blob.vercel-storage.com/secure-file.enc"}
+
+    def fake_put(url: str, content: bytes, headers: dict[str, str], timeout: int) -> BlobResponse:
+        request_details.update({"url": url, "content": content, "headers": headers, "timeout": timeout})
+        return BlobResponse()
+
+    monkeypatch.setattr(storage.httpx, "put", fake_put)
+
+    assert storage.put_encrypted_blob("resident-documents/secure-file.enc", b"encrypted") == (
+        "https://store.private.blob.vercel-storage.com/secure-file.enc"
+    )
+    assert request_details["headers"]["x-vercel-blob-access"] == "private"
+    with pytest.raises(ValueError):
+        storage.validate_blob_url("https://store.blob.vercel-storage.com/public-file.enc")
+
+
+def test_vercel_document_upload_fails_closed_without_persistent_storage(
+    logged_in_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, csrf = logged_in_client
+    monkeypatch.setattr(config, "VERCEL_DEPLOYMENT", True)
+    monkeypatch.setattr(config, "DATABASE_URL", "")
+    monkeypatch.setattr(config, "BLOB_READ_WRITE_TOKEN", "test-blob-token")
+
+    response = client.post(
+        "/api/residents",
+        data=resident_form(),
+        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    assert response.status_code == 503
+    assert "Secure document storage is not configured" in response.json()["detail"]
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM residents").fetchone()[0] == 0
+    assert list(config.DOCUMENTS_DIR.glob("*.enc")) == []
+
+
+def test_vercel_document_storage_requires_blob_token(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(config, "VERCEL_DEPLOYMENT", True)
+    monkeypatch.setattr(config, "DATABASE_URL", "postgresql://configured")
+    monkeypatch.setattr(config, "BLOB_READ_WRITE_TOKEN", "")
+
+    assert not storage.document_storage_ready()
+    with pytest.raises(RuntimeError, match="private Vercel Blob"):
+        save_encrypted_document(PERSON_PNG)
+
+
+def test_postgres_backup_contains_all_tables_and_application_documents(monkeypatch: pytest.MonkeyPatch):
+    table_rows = {table: [] for table in BACKUP_TABLES}
+    resident_document = "https://store.private.blob.vercel-storage.com/resident.enc"
+    application_photo = "https://store.private.blob.vercel-storage.com/application-photo.enc"
+    application_id_photo = "https://store.private.blob.vercel-storage.com/application-id.enc"
+    table_rows["documents"] = [{"id": "resident-document", "encrypted_path": resident_document}]
+    table_rows["registration_applications"] = [
+        {
+            "id": "application-1",
+            "person_photo_path": application_photo,
+            "aadhaar_photo_path": application_id_photo,
+        }
+    ]
+    encrypted_documents = {
+        resident_document: b"encrypted-resident-document",
+        application_photo: b"encrypted-application-photo",
+        application_id_photo: b"encrypted-application-id",
+    }
+    stored_backups: dict[str, bytes] = {}
+
+    class FakeConnection:
+        def execute(self, query: str):
+            table = query.rsplit(" ", 1)[-1]
+
+            class FakeResult:
+                def fetchall(self) -> list[dict[str, object]]:
+                    return table_rows[table]
+
+            return FakeResult()
+
+    def fake_read(location: str) -> bytes:
+        if location in stored_backups:
+            return stored_backups[location]
+        return encrypted_documents[location]
+
+    def fake_put(pathname: str, encrypted_contents: bytes) -> str:
+        backup_url = f"https://store.private.blob.vercel-storage.com/{pathname}"
+        stored_backups[backup_url] = encrypted_contents
+        return backup_url
+
+    monkeypatch.setattr(backup_module.database, "transaction", lambda: nullcontext(object()))
+    monkeypatch.setattr(backup_module.database, "read_connection", lambda: nullcontext(FakeConnection()))
+    monkeypatch.setattr(backup_module.database, "write_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(backup_module, "read_encrypted_object", fake_read)
+    monkeypatch.setattr(backup_module, "put_encrypted_blob", fake_put)
+
+    backup_url = create_postgres_backup()
+    encrypted_backup = stored_backups[backup_url]
+    with zipfile.ZipFile(BytesIO(decrypt_bytes(encrypted_backup))) as archive:
+        assert set(json.loads(archive.read("database.json"))) == set(BACKUP_TABLES)
+        manifest = json.loads(archive.read("document-manifest.json"))
+        assert set(manifest) == {resident_document, application_photo, application_id_photo}
+        assert set(manifest.values()) <= set(archive.namelist())
+        assert {archive.read(path) for path in manifest.values()} == set(encrypted_documents.values())
+    declared_tables = set(re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", database.SCHEMA))
+    assert set(BACKUP_TABLES) == declared_tables
 
 
 def test_vercel_function_route_serves_frontend_shell():
@@ -231,6 +450,199 @@ def test_full_checkin_payment_checkout_and_encrypted_backup(logged_in_client, tm
         assert b"123456789012" not in archive.read("hostel.sqlite3")
 
 
+def test_joiner_registration_invite_review_and_approval(logged_in_client):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    invite = client.post(
+        "/api/registration-invites",
+        json={"hostel_id": "test-hostel"},
+        headers=headers,
+    )
+    assert invite.status_code == 201
+    token = invite.json()["path"].split("/")[-1]
+    assert client.get(invite.json()["path"]).status_code == 200
+    assert client.get(f"/api/join/{token}").json() == {"hostel_name": "Test Hostel"}
+    missing_photo = client.post(
+        f"/api/join/{token}",
+        data={"name": "New Joiner", "mobile": "9876543210", "consent": "true"},
+    )
+    assert missing_photo.status_code == 422
+
+    submitted = client.post(
+        f"/api/join/{token}",
+        data={
+            "name": "New Joiner",
+            "mobile": "98765 43210",
+            "aadhaar": "123456789012",
+            "consent": "true",
+            "whatsapp_opt_in": "true",
+        },
+        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+    )
+    assert submitted.status_code == 201
+    assert client.post(
+        f"/api/join/{token}",
+        data={"name": "New Joiner", "mobile": "9876543210", "consent": "true"},
+    ).status_code == 410
+
+    workspace = client.get("/api/registration-workspace").json()
+    application = workspace["applications"][0]
+    assert application["name"] == "New Joiner"
+    assert application["mobile"] == "+919876543210"
+    assert application["aadhaar_last4"] == "9012"
+    assert application["whatsapp_opt_in"] is True
+    assert application["documents"][0]["kind"] == "person_photo"
+    with database.read_connection() as connection:
+        stored_application = connection.execute(
+            "SELECT name_ciphertext, mobile_ciphertext, aadhaar_ciphertext "
+            "FROM registration_applications WHERE id = ?",
+            (application["id"],),
+        ).fetchone()
+    assert stored_application["name_ciphertext"] != "New Joiner"
+    assert stored_application["mobile_ciphertext"] != "+919876543210"
+    assert stored_application["aadhaar_ciphertext"] != "123456789012"
+
+    approval_payload = {
+        "bed_number": 3,
+        "joining_date": "2026-11-13",
+        "payment_status": "paid",
+    }
+    invalid_approval = client.post(
+        f"/api/registration-applications/{application['id']}/approve",
+        json={**approval_payload, "room_id": "not-this-hostel"},
+        headers=headers,
+    )
+    assert invalid_approval.status_code == 422
+    assert len(client.get("/api/registration-workspace").json()["applications"]) == 1
+    approval = client.post(
+        f"/api/registration-applications/{application['id']}/approve",
+        json={**approval_payload, "room_id": "room-101"},
+        headers=headers,
+    )
+    assert approval.status_code == 200
+    dashboard = client.get("/api/dashboard").json()
+    resident = next(item for item in dashboard["residents"] if item["id"] == approval.json()["resident_id"])
+    assert resident["name"] == "New Joiner"
+    assert resident["room"] == "101"
+    assert resident["bed_number"] == 3
+    assert resident["whatsapp_opt_in"] is True
+    assert [document["kind"] for document in resident["documents"]] == ["person_photo"]
+    assert client.get(resident["documents"][0]["url"]).content == PERSON_PNG
+    assert client.get("/api/registration-workspace").json()["applications"] == []
+
+
+def test_whatsapp_broadcast_requires_template_configuration(logged_in_client, monkeypatch: pytest.MonkeyPatch):
+    client, csrf = logged_in_client
+    monkeypatch.setattr(config, "WHATSAPP_ACCESS_TOKEN", "")
+    monkeypatch.setattr(config, "WHATSAPP_PHONE_NUMBER_ID", "")
+    monkeypatch.setattr(config, "WHATSAPP_BROADCAST_TEMPLATE", "")
+
+    status = client.get("/api/whatsapp/broadcast-status")
+    assert status.status_code == 200
+    assert status.json()["ready"] is False
+    assert "approved WhatsApp broadcast template" in status.json()["reason"]
+    response = client.post(
+        "/api/whatsapp/broadcast",
+        json={"hostel_id": "test-hostel", "message": "Hostel announcement"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 503
+
+
+def test_resident_whatsapp_consent_can_be_recorded_and_withdrawn(logged_in_client):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    resident_response = client.post(
+        "/api/residents",
+        data=resident_form(mobile="9876543210", whatsapp_opt_in="false"),
+        headers=headers,
+    )
+    assert resident_response.status_code == 201
+    resident_id = resident_response.json()["id"]
+    resident = next(item for item in client.get("/api/dashboard").json()["residents"] if item["id"] == resident_id)
+    assert resident["mobile"] == "+919876543210"
+    assert resident["whatsapp_opt_in"] is False
+
+    recorded = client.patch(
+        f"/api/residents/{resident_id}/whatsapp-consent",
+        json={"enabled": True},
+        headers=headers,
+    )
+    assert recorded.status_code == 200
+    assert recorded.json()["whatsapp_opt_in"] is True
+    withdrawn = client.patch(
+        f"/api/residents/{resident_id}/whatsapp-consent",
+        json={"enabled": False},
+        headers=headers,
+    )
+    assert withdrawn.status_code == 200
+    assert withdrawn.json()["whatsapp_opt_in"] is False
+
+
+def test_whatsapp_broadcast_sends_only_to_active_opted_in_guests(logged_in_client, monkeypatch: pytest.MonkeyPatch):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    residents = []
+    for bed_number, name, mobile, opted_in in (
+        (1, "Opted In", "+919876543210", True),
+        (2, "Opted Out", "+919876543211", False),
+        (3, "Checked Out", "+919876543212", True),
+    ):
+        response = client.post(
+            "/api/residents",
+            data=resident_form(
+                name=name,
+                mobile=mobile,
+                bed_number=str(bed_number),
+                payment_status="paid",
+                amount_due="",
+                whatsapp_opt_in="true" if opted_in else "false",
+            ),
+            headers=headers,
+        )
+        assert response.status_code == 201
+        residents.append(response.json()["id"])
+    assert client.delete(f"/api/residents/{residents[2]}", headers=headers).status_code == 200
+
+    monkeypatch.setattr(config, "WHATSAPP_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr(config, "WHATSAPP_PHONE_NUMBER_ID", "test-phone-id")
+    monkeypatch.setattr(config, "WHATSAPP_BROADCAST_TEMPLATE", "hostel_announcement")
+    monkeypatch.setattr(config, "WHATSAPP_BROADCAST_LANGUAGE", "en")
+    sent = []
+
+    async def fake_send(to: str, message: str) -> None:
+        sent.append((to, message))
+
+    monkeypatch.setattr(main_module, "_send_whatsapp_template_message", fake_send)
+    response = client.post(
+        "/api/whatsapp/broadcast",
+        json={"hostel_id": "test-hostel", "message": "Water maintenance at 3 PM."},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["recipient_count"] == 1
+    assert response.json()["sent_count"] == 1
+    assert response.json()["failed_count"] == 0
+    assert sent == [("919876543210", "Water maintenance at 3 PM.")]
+
+
+def test_joiner_registration_invite_can_be_revoked(logged_in_client):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    invite = client.post(
+        "/api/registration-invites",
+        json={"hostel_id": "test-hostel"},
+        headers=headers,
+    )
+    assert invite.status_code == 201
+    token = invite.json()["path"].split("/")[-1]
+    invite_id = invite.json()["id"]
+
+    revoked = client.post(f"/api/registration-invites/{invite_id}/revoke", headers=headers)
+    assert revoked.status_code == 200
+    assert client.get(f"/api/join/{token}").status_code == 410
+
+
 def test_staff_roles_and_csrf_are_enforced(logged_in_client):
     client, csrf = logged_in_client
     admin_headers = {"X-CSRF-Token": csrf}
@@ -303,29 +715,75 @@ def test_platform_portal_onboards_clients_and_keeps_owner_layout_access_separate
             "owner_username": "new-owner",
             "password": "New-owner-password1!",
             "hostel_name": "New Owner Hostel",
+            "hostel_address": "12 Palm Street, Central District",
+            "location": "Near Central Park",
+            "owner_mobile": "9876543210",
         },
         headers={"X-CSRF-Token": platform_csrf},
     )
     assert created.status_code == 201
-    new_floor = client.post(
-        f"/api/platform/hostels/{created.json()['hostel_id']}/floors",
-        json={"floor_number": 1},
+    setup_url = f"/api/platform/hostels/{created.json()['hostel_id']}/setup"
+    invalid_setup = client.put(
+        setup_url,
+        json={"ac_type": "ac", "floor_types": ["basement", "ground", "penthouse"], "upper_floor_count": 97},
         headers={"X-CSRF-Token": platform_csrf},
     )
-    assert new_floor.status_code == 201
+    assert invalid_setup.status_code == 422
+    setup = client.put(
+        setup_url,
+        json={"ac_type": "ac", "floor_types": ["basement", "ground", "penthouse"], "upper_floor_count": 2},
+        headers={"X-CSRF-Token": platform_csrf},
+    )
+    assert setup.status_code == 200
+    assert [floor["floor_type"] for floor in setup.json()["floors"]] == [
+        "basement",
+        "ground",
+        "standard",
+        "standard",
+        "penthouse",
+    ]
+    new_floor = setup.json()["floors"][0]
     too_many_beds = client.post(
-        f"/api/platform/floors/{new_floor.json()['id']}/rooms",
+        f"/api/platform/floors/{new_floor['id']}/rooms",
         json={"room_number": "501", "share_count": 5},
         headers={"X-CSRF-Token": platform_csrf},
     )
     assert too_many_beds.status_code == 422
     room = client.post(
-        f"/api/platform/floors/{new_floor.json()['id']}/rooms",
-        json={"room_number": "501", "share_count": 4},
+        f"/api/platform/floors/{new_floor['id']}/rooms",
+        json={"room_number": "501", "share_count": 4, "monthly_rent": 12500},
         headers={"X-CSRF-Token": platform_csrf},
     )
     assert room.status_code == 201
-    assert client.get("/api/platform/dashboard").json()["summary"]["total_clients"] == 2
+    assert room.json()["monthly_rent_paise"] == 1250000
+    second_room = client.post(
+        f"/api/platform/floors/{new_floor['id']}/rooms",
+        json={"room_number": "502", "share_count": 2, "monthly_rent": 8000},
+        headers={"X-CSRF-Token": platform_csrf},
+    )
+    assert second_room.status_code == 201
+    assert second_room.json()["monthly_rent_paise"] == 800000
+    platform_dashboard = client.get("/api/platform/dashboard").json()
+    assert platform_dashboard["summary"]["total_clients"] == 2
+    saved_hostel = next(hostel for hostel in platform_dashboard["hostels"] if hostel["id"] == created.json()["hostel_id"])
+    saved_client = next(client_row for client_row in platform_dashboard["clients"] if client_row["hostel_id"] == created.json()["hostel_id"])
+    assert saved_hostel["ac_type"] == "ac"
+    assert saved_hostel["address"] == "12 Palm Street, Central District"
+    assert saved_hostel["location"] == "Near Central Park"
+    assert saved_hostel["owner_mobile"] == "+919876543210"
+    assert saved_client["owner_mobile"] == "+919876543210"
+    assert saved_client["location"] == "Near Central Park"
+    assert saved_hostel["floors"][0]["rooms"][0]["monthly_rent_paise"] == 1250000
+    assert saved_hostel["floors"][0]["rooms"][1]["monthly_rent_paise"] == 800000
+    with database.read_connection() as connection:
+        private_fields = connection.execute(
+            "SELECT address_ciphertext, location_ciphertext, owner_mobile_ciphertext "
+            "FROM hostels WHERE id = ?",
+            (created.json()["hostel_id"],),
+        ).fetchone()
+    assert "12 Palm Street" not in private_fields["address_ciphertext"]
+    assert "Central Park" not in private_fields["location_ciphertext"]
+    assert "9876543210" not in private_fields["owner_mobile_ciphertext"]
 
     with TestClient(app) as new_owner_client:
         owner_login = new_owner_client.post(
@@ -333,13 +791,60 @@ def test_platform_portal_onboards_clients_and_keeps_owner_layout_access_separate
         )
         assert owner_login.status_code == 200
         owner_dashboard = new_owner_client.get("/api/dashboard").json()
-        assert owner_dashboard["summary"]["total_rooms"] == 1
-        assert len(owner_dashboard["hostels"][0]["floors"][0]["rooms"]) == 1
+        assert owner_dashboard["hostels"][0]["ac_type"] == "ac"
+        assert owner_dashboard["hostels"][0]["address"] == "12 Palm Street, Central District"
+        assert owner_dashboard["hostels"][0]["owner_mobile"] == "+919876543210"
+        assert owner_dashboard["hostels"][0]["floors"][0]["floor_type"] == "basement"
+        assert owner_dashboard["summary"]["total_rooms"] == 2
+        owner_rooms = owner_dashboard["hostels"][0]["floors"][0]["rooms"]
+        assert [(room["share_count"], room["monthly_rent_paise"]) for room in owner_rooms] == [
+            (4, 1250000),
+            (2, 800000),
+        ]
         assert new_owner_client.post(
             f"/api/platform/hostels/{created.json()['hostel_id']}/floors",
             json={"floor_number": 2},
             headers={"X-CSRF-Token": owner_login.json()["csrf_token"]},
         ).status_code == 401
+
+    no_ground_client = client.post(
+        "/api/platform/clients",
+        json={
+            "owner_username": "no-ground-owner",
+            "password": "NoGround-password1!",
+            "hostel_name": "No Ground Hostel",
+            "hostel_address": "2 Upper Street, Central District",
+            "owner_mobile": "+919876543211",
+        },
+        headers={"X-CSRF-Token": platform_csrf},
+    )
+    assert no_ground_client.status_code == 201
+    no_ground_setup = client.put(
+        f"/api/platform/hostels/{no_ground_client.json()['hostel_id']}/setup",
+        json={"ac_type": "mixed", "upper_floor_count": 2},
+        headers={"X-CSRF-Token": platform_csrf},
+    )
+    assert no_ground_setup.status_code == 200
+    assert [floor["floor_type"] for floor in no_ground_setup.json()["floors"]] == ["standard", "standard"]
+    assert [floor["floor_number"] for floor in no_ground_setup.json()["floors"]] == [1, 2]
+
+    delete_headers = {"X-CSRF-Token": platform_csrf}
+    deleted_room = client.delete(f"/api/rooms/{second_room.json()['id']}", headers=delete_headers)
+    assert deleted_room.status_code == 200
+    deleted_floor = client.delete(f"/api/platform/floors/{new_floor['id']}", headers=delete_headers)
+    assert deleted_floor.status_code == 200
+    assert deleted_floor.json()["rooms_archived"] == 1
+    with database.read_connection() as connection:
+        archived_floor = connection.execute("SELECT active FROM floors WHERE id = ?", (new_floor["id"],)).fetchone()
+        archived_room = connection.execute("SELECT active FROM rooms WHERE id = ?", (room.json()["id"],)).fetchone()
+    assert archived_floor["active"] == 0
+    assert archived_room["active"] == 0
+    replacement_floor = client.post(
+        f"/api/platform/hostels/{created.json()['hostel_id']}/floors",
+        json={"floor_number": 1},
+        headers={"X-CSRF-Token": platform_csrf},
+    )
+    assert replacement_floor.status_code == 201
 
     client.cookies.delete(config.PLATFORM_COOKIE_NAME)
     assert client.post(
@@ -355,7 +860,8 @@ def test_owner_room_type_charges_flow_through_rooms_vacancy_and_booking(logged_i
         "/api/hostels/test-hostel/room-charges",
         json={
             "charges": [
-                {"share_count": 2, "monthly_rent": 10000},
+                {"share_count": 2, "ac_type": "non_ac", "monthly_rent": 10000},
+                {"share_count": 2, "ac_type": "ac", "monthly_rent": 12000},
                 {"share_count": 3, "monthly_rent": 8500},
                 {"share_count": 4, "monthly_rent": 7500},
             ]
@@ -363,24 +869,32 @@ def test_owner_room_type_charges_flow_through_rooms_vacancy_and_booking(logged_i
         headers={"X-CSRF-Token": owner_csrf},
     )
     assert saved.status_code == 200
-    assert {item["share_count"]: item["monthly_rent_paise"] for item in saved.json()["charges"]} == {
-        2: 1000000,
-        3: 850000,
-        4: 750000,
+    assert {(item["share_count"], item["ac_type"]): item["monthly_rent_paise"] for item in saved.json()["charges"]} == {
+        (2, "non_ac"): 1000000,
+        (2, "ac"): 1200000,
+        (3, "non_ac"): 850000,
+        (4, "non_ac"): 750000,
     }
+
+    owner_created_ac_room = client.post(
+        "/api/floors/test-floor-1/rooms",
+        json={"room_number": "104", "share_count": 2, "ac_type": "ac"},
+        headers={"X-CSRF-Token": owner_csrf},
+    )
+    assert owner_created_ac_room.status_code == 201
+    assert owner_created_ac_room.json()["monthly_rent_paise"] == 1200000
 
     platform_headers = {"X-CSRF-Token": login_platform(client)}
     created_room = client.post(
         "/api/platform/floors/test-floor-1/rooms",
-        json={"room_number": "102", "share_count": 2},
+        json={"room_number": "102", "share_count": 2, "ac_type": "non_ac"},
         headers=platform_headers,
     )
     assert created_room.status_code == 201
     assert created_room.json()["monthly_rent_paise"] == 1000000
-
     dashboard = client.get("/api/dashboard").json()
-    room_rates = {room["share_count"]: room["monthly_rent_paise"] for room in dashboard["rooms"]}
-    assert room_rates == {2: 1000000, 4: 750000}
+    room_rates = {(room["share_count"], room["ac_type"]): room["monthly_rent_paise"] for room in dashboard["rooms"]}
+    assert room_rates == {(2, "non_ac"): 1000000, (2, "ac"): 1200000, (4, "non_ac"): 750000}
     vacancy = client.get("/api/vacancy/live", params={"hostel_id": "test-hostel"}).json()
     four_share_vacancy = next(item for item in vacancy["vacant_list"] if item["share_count"] == 4)
     assert four_share_vacancy["rent"] == 7500
@@ -389,7 +903,7 @@ def test_owner_room_type_charges_flow_through_rooms_vacancy_and_booking(logged_i
         "/api/bookings/create",
         json={
             "name": "Rate Test Resident",
-            "phone": "+919876543210",
+            "phone": "9876543210",
             "sharing_needed": 4,
             "budget": 7500,
             "visit_time": "6pm",
@@ -406,6 +920,7 @@ def test_owner_room_type_charges_flow_through_rooms_vacancy_and_booking(logged_i
         item for item in client.get("/api/dashboard").json()["residents"] if item["id"] == confirmed.json()["resident_id"]
     )
     assert resident["amount_due_paise"] == 750000
+    assert resident["mobile"] == "+919876543210"
 
 
 def test_platform_subscription_payment_moves_from_pending_to_received(logged_in_client):
@@ -915,6 +1430,7 @@ def test_booking_reserves_room_and_confirmation_creates_resident(logged_in_clien
     assert room["available_beds"] == 0
     assert dashboard["summary"]["available"] == 0
     assert dashboard["bookings"][0]["student_name"] == "Booking Resident"
+    assert dashboard["bookings"][0]["phone"] == "+919876543210"
     assert client.post(
         "/api/residents",
         data=resident_form(room="room-101"),
@@ -926,6 +1442,7 @@ def test_booking_reserves_room_and_confirmation_creates_resident(logged_in_clien
     dashboard = client.get("/api/dashboard").json()
     assert dashboard["residents"][0]["name"] == "Booking Resident"
     assert dashboard["residents"][0]["room"] == "101"
+    assert dashboard["residents"][0]["mobile"] == "+919876543210"
     assert dashboard["summary"]["available"] == 3
     assert dashboard["bookings"] == []
     with database.read_connection() as connection:
@@ -1123,7 +1640,7 @@ def test_vercel_blob_upload_stores_only_encrypted_document_bytes(monkeypatch: py
             return None
 
         def json(self):
-            return {"url": "https://test-store.public.blob.vercel-storage.com/resident-documents/test.enc"}
+            return {"url": "https://test-store.private.blob.vercel-storage.com/resident-documents/test.enc"}
 
     def fake_put(url, content, headers, timeout):
         uploaded.update({"url": url, "content": content, "headers": headers})
@@ -1143,8 +1660,9 @@ def test_vercel_blob_upload_stores_only_encrypted_document_bytes(monkeypatch: py
     monkeypatch.setattr("app.storage.httpx.get", fake_get)
 
     location = save_encrypted_document(plaintext)
-    assert location == "https://test-store.public.blob.vercel-storage.com/resident-documents/test.enc"
+    assert location == "https://test-store.private.blob.vercel-storage.com/resident-documents/test.enc"
     assert uploaded["content"] != plaintext
     assert decrypt_bytes(uploaded["content"]) == plaintext
     assert uploaded["headers"]["Authorization"] == "Bearer test-only-token"
+    assert uploaded["headers"]["x-vercel-blob-access"] == "private"
     assert read_document(location) == plaintext

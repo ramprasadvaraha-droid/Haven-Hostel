@@ -1,3 +1,4 @@
+import asyncio
 import json
 import hashlib
 import hmac
@@ -26,7 +27,12 @@ from urllib.parse import quote
 from app import config, database
 from app.security import decrypt_text, encrypt_bytes, encrypt_text, hash_address, hash_password, password_policy_error
 from app.security import hash_session_token, new_token, password_hasher, verify_password
-from app.storage import read_document, remove_local_encrypted_document, save_encrypted_document
+from app.storage import (
+    document_storage_ready,
+    read_document,
+    remove_local_encrypted_document,
+    save_encrypted_document,
+)
 
 
 IMAGE_SIGNATURES = {
@@ -83,11 +89,39 @@ class PlatformPasswordResetConfirmRequest(StrongPasswordRequest):
 class PlatformClientRequest(StrongPasswordRequest):
     owner_username: str = Field(min_length=3, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
     hostel_name: str = Field(min_length=2, max_length=100)
+    hostel_address: str = Field(min_length=5, max_length=300)
+    location: str | None = Field(default=None, max_length=160)
+    owner_mobile: str = Field(min_length=10, max_length=20, pattern=r"^\+?[0-9\s().-]{10,20}$")
+
+    @field_validator("hostel_address")
+    @classmethod
+    def address_is_not_blank(cls, address: str) -> str:
+        if not address.strip():
+            raise ValueError("Enter the hostel address.")
+        return address.strip()
+
+    @field_validator("location")
+    @classmethod
+    def clean_optional_location(cls, location: str | None) -> str | None:
+        return location.strip() or None if location else None
 
 
 class PlatformHostelRequest(BaseModel):
     owner_id: str
     name: str = Field(min_length=2, max_length=100)
+
+
+class PlatformHostelSetupRequest(BaseModel):
+    ac_type: Literal["ac", "mixed"]
+    floor_types: list[Literal["basement", "ground", "penthouse"]] = Field(default_factory=list, max_length=3)
+    upper_floor_count: int = Field(ge=0, le=99)
+
+    @field_validator("floor_types")
+    @classmethod
+    def floor_types_are_unique(cls, floor_types: list[str]) -> list[str]:
+        if len(floor_types) != len(set(floor_types)):
+            raise ValueError("Choose each floor type only once.")
+        return floor_types
 
 
 class PlatformSubscriptionRequest(BaseModel):
@@ -103,11 +137,13 @@ class HostelRequest(BaseModel):
 
 class FloorRequest(BaseModel):
     floor_number: int = Field(ge=1, le=99)
+    floor_type: Literal["basement", "ground", "standard", "penthouse"] = "standard"
 
 
 class RoomRequest(BaseModel):
     room_number: str = Field(min_length=1, max_length=20, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     share_count: int = Field(ge=1, le=20)
+    ac_type: Literal["ac", "non_ac"] | None = None
     monthly_rent: Decimal = Field(default=Decimal("0"), ge=0, le=1000000)
 
 
@@ -116,12 +152,13 @@ class RoomRentRequest(BaseModel):
 
 
 class RoomTypeChargeItem(BaseModel):
-    share_count: int = Field(ge=1, le=4)
+    share_count: int = Field(ge=1, le=20)
+    ac_type: Literal["ac", "non_ac"] | None = None
     monthly_rent: Decimal = Field(ge=0, le=1000000)
 
 
 class RoomTypeChargesRequest(BaseModel):
-    charges: list[RoomTypeChargeItem] = Field(min_length=1, max_length=4)
+    charges: list[RoomTypeChargeItem] = Field(min_length=1, max_length=40)
 
 
 class BookingCreateRequest(BaseModel):
@@ -131,6 +168,28 @@ class BookingCreateRequest(BaseModel):
     budget: Decimal | None = Field(default=None, gt=0, le=1000000)
     visit_time: str = Field(min_length=1, max_length=100)
     hostel_id: str | None = None
+
+
+class RegistrationInviteRequest(BaseModel):
+    hostel_id: str = Field(min_length=1, max_length=64)
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+
+
+class RegistrationApprovalRequest(BaseModel):
+    room_id: str = Field(min_length=1, max_length=64)
+    bed_number: int = Field(ge=1, le=20)
+    joining_date: str = Field(min_length=1, max_length=10)
+    payment_status: Literal["paid", "unpaid"]
+    amount_due: Decimal = Field(default=Decimal("0"), ge=0, le=1000000)
+
+
+class WhatsAppConsentRequest(BaseModel):
+    enabled: bool
+
+
+class WhatsAppBroadcastRequest(BaseModel):
+    hostel_id: str = Field(min_length=1, max_length=64)
+    message: str = Field(min_length=1, max_length=1024)
 
 
 @asynccontextmanager
@@ -177,6 +236,17 @@ def index() -> FileResponse:
 @app.get("/api/index")
 def api_index() -> FileResponse:
     return FileResponse(config.ROOT_DIR / "index.html", media_type="text/html")
+
+
+@app.get("/register/{token}")
+def registration_page(token: str) -> FileResponse:
+    if not re.fullmatch(r"[a-f0-9]{64}", token):
+        raise HTTPException(status_code=404, detail="Registration link not found.")
+    return FileResponse(
+        config.ROOT_DIR / "static" / "registration.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/health")
@@ -282,6 +352,24 @@ def require_write(request: Request, staff: dict[str, str] = Depends(current_staf
 
 def require_admin(staff: dict[str, str] = Depends(require_write)) -> dict[str, str]:
     if staff["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access is required.")
+    return staff
+
+
+def require_admin_read(staff: dict[str, str] = Depends(current_staff)) -> dict[str, str]:
+    if staff["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access is required.")
+    return staff
+
+
+def require_staff_or_platform(request: Request) -> dict[str, str]:
+    if request.cookies.get(config.PLATFORM_COOKIE_NAME):
+        account = current_platform_user(request)
+        if account.get("role") != "developer":
+            raise HTTPException(status_code=403, detail="Administrator access is required.")
+        return account
+    staff = current_staff(request)
+    if staff.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Administrator access is required.")
     return staff
 
@@ -658,11 +746,13 @@ def room_type_charge_or_fallback(
     connection: sqlite3.Connection | database.PostgresConnection,
     hostel_id: str,
     share_count: int,
+    ac_type: str,
     fallback_paise: int,
 ) -> int:
     charge = connection.execute(
-        "SELECT monthly_rent_paise FROM room_type_charges WHERE hostel_id = ? AND share_count = ?",
-        (hostel_id, share_count),
+        "SELECT monthly_rent_paise FROM room_type_charges "
+        "WHERE hostel_id = ? AND share_count = ? AND ac_type = ?",
+        (hostel_id, share_count, ac_type),
     ).fetchone()
     return charge["monthly_rent_paise"] if charge else fallback_paise
 
@@ -670,6 +760,11 @@ def room_type_charge_or_fallback(
 async def read_optional_image(upload: UploadFile | None, label: str) -> tuple[bytes, str] | None:
     if not upload or not upload.filename:
         return None
+    if not document_storage_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="Secure document storage is not configured. Contact the administrator.",
+        )
     media_type = (upload.content_type or "").lower()
     signature_check = IMAGE_SIGNATURES.get(media_type)
     if not signature_check:
@@ -699,6 +794,7 @@ def serialize_resident(row: sqlite3.Row, documents: list[dict[str, str]]) -> dic
         "payment_due_date": row["payment_due_date"],
         "payment_status": row["payment_status"],
         "amount_due_paise": row["amount_due_paise"],
+        "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
         "documents": documents,
     }
 
@@ -726,23 +822,25 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
             (staff["owner_id"],),
         ).fetchall()
         hostel_rows = connection.execute(
-            "SELECT id, name FROM hostels WHERE active = 1 AND owner_id = ? ORDER BY name COLLATE NOCASE",
+            "SELECT id, name, ac_type, address_ciphertext, location_ciphertext, owner_mobile_ciphertext "
+            "FROM hostels WHERE active = 1 AND owner_id = ? ORDER BY name COLLATE NOCASE",
             (staff["owner_id"],),
         ).fetchall()
         room_type_charge_rows = connection.execute(
-            "SELECT charge.hostel_id, charge.share_count, charge.monthly_rent_paise "
+            "SELECT charge.hostel_id, charge.share_count, charge.ac_type, charge.monthly_rent_paise "
             "FROM room_type_charges charge JOIN hostels hostel ON hostel.id = charge.hostel_id "
             "WHERE hostel.active = 1 AND hostel.owner_id = ? ORDER BY charge.hostel_id, charge.share_count",
             (staff["owner_id"],),
         ).fetchall()
         floor_rows = connection.execute(
-            "SELECT floor.id, floor.hostel_id, floor.floor_number FROM floors floor "
-            "JOIN hostels hostel ON hostel.id = floor.hostel_id WHERE hostel.active = 1 AND hostel.owner_id = ? "
+            "SELECT floor.id, floor.hostel_id, floor.floor_number, floor.floor_type FROM floors floor "
+            "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE CAST(floor.active AS TEXT) IN ('1', 'true') AND hostel.active = 1 AND hostel.owner_id = ? "
             "ORDER BY floor.floor_number",
             (staff["owner_id"],),
         ).fetchall()
         room_rows = connection.execute(
-            "SELECT room.id, room.room_number, room.share_count, room.monthly_rent_paise, room.floor_id, floor.floor_number, "
+            "SELECT room.id, room.room_number, room.share_count, room.ac_type, room.monthly_rent_paise, room.floor_id, floor.floor_number, "
             "hostel.id AS hostel_id, hostel.name AS hostel_name "
             "FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
             "JOIN hostels hostel ON hostel.id = floor.hostel_id "
@@ -786,12 +884,26 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
         residents_by_room.setdefault(resident["room_id"], set()).add(resident["bed_number"])
 
     hostels_by_id: dict[str, dict[str, object]] = {
-        row["id"]: {"id": row["id"], "name": row["name"], "floors": [], "occupied": 0}
+        row["id"]: {
+            "id": row["id"],
+            "name": row["name"],
+            "ac_type": row["ac_type"],
+            "address": decrypt_text(row["address_ciphertext"]) if row["address_ciphertext"] else "",
+            "location": decrypt_text(row["location_ciphertext"]) if row["location_ciphertext"] else "",
+            "owner_mobile": decrypt_text(row["owner_mobile_ciphertext"]) if row["owner_mobile_ciphertext"] else "",
+            "floors": [],
+            "occupied": 0,
+        }
         for row in hostel_rows
     }
     floors_by_id: dict[str, dict[str, object]] = {}
     for row in floor_rows:
-        floor = {"id": row["id"], "floor_number": row["floor_number"], "rooms": []}
+        floor = {
+            "id": row["id"],
+            "floor_number": row["floor_number"],
+            "floor_type": row["floor_type"],
+            "rooms": [],
+        }
         floors_by_id[row["id"]] = floor
         hostel = hostels_by_id.get(row["hostel_id"])
         if hostel:
@@ -834,6 +946,7 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
             "id": row["id"],
             "room_number": row["room_number"],
             "share_count": row["share_count"],
+            "ac_type": row["ac_type"],
             "monthly_rent_paise": row["monthly_rent_paise"],
             "monthly_rent_paise": row["monthly_rent_paise"],
             "hostel_id": row["hostel_id"],
@@ -897,32 +1010,37 @@ def update_hostel_room_charges(
     payload: RoomTypeChargesRequest,
     staff: dict[str, str] = Depends(require_admin),
 ) -> dict[str, object]:
-    share_counts = [charge.share_count for charge in payload.charges]
-    if len(set(share_counts)) != len(share_counts):
-        raise HTTPException(status_code=422, detail="Each sharing type can only be listed once.")
     now = datetime.now(timezone.utc).isoformat()
     saved_charges = []
     with database.transaction() as connection:
         hostel = connection.execute(
-            "SELECT id FROM hostels WHERE id = ? AND owner_id = ? AND active = 1",
+            "SELECT id, ac_type FROM hostels WHERE id = ? AND owner_id = ? AND active = 1",
             (hostel_id, staff["owner_id"]),
         ).fetchone()
         if not hostel:
             raise HTTPException(status_code=404, detail="Active hostel not found.")
+        seen_charge_keys: set[tuple[int, str]] = set()
         for charge in payload.charges:
+            ac_type = charge.ac_type or ("ac" if hostel["ac_type"] == "ac" else "non_ac")
+            charge_key = (charge.share_count, ac_type)
+            if charge_key in seen_charge_keys:
+                raise HTTPException(status_code=422, detail="Each sharing and AC type combination can only be listed once.")
+            seen_charge_keys.add(charge_key)
+            if hostel["ac_type"] == "ac" and ac_type != "ac":
+                raise HTTPException(status_code=422, detail="This hostel only supports AC rooms.")
             rent_paise = rent_to_paise(str(charge.monthly_rent))
             connection.execute(
-                "INSERT INTO room_type_charges (hostel_id, share_count, monthly_rent_paise, updated_at) "
-                "VALUES (?, ?, ?, ?) ON CONFLICT (hostel_id, share_count) DO UPDATE SET "
+                "INSERT INTO room_type_charges (hostel_id, share_count, ac_type, monthly_rent_paise, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT (hostel_id, share_count, ac_type) DO UPDATE SET "
                 "monthly_rent_paise = excluded.monthly_rent_paise, updated_at = excluded.updated_at",
-                (hostel_id, charge.share_count, rent_paise, now),
+                (hostel_id, charge.share_count, ac_type, rent_paise, now),
             )
             connection.execute(
                 "UPDATE rooms SET monthly_rent_paise = ? WHERE share_count = ? AND active = 1 "
-                "AND floor_id IN (SELECT id FROM floors WHERE hostel_id = ?)",
-                (rent_paise, charge.share_count, hostel_id),
+                "AND ac_type = ? AND floor_id IN (SELECT id FROM floors WHERE hostel_id = ?)",
+                (rent_paise, charge.share_count, ac_type, hostel_id),
             )
-            saved_charges.append({"share_count": charge.share_count, "monthly_rent_paise": rent_paise})
+            saved_charges.append({"share_count": charge.share_count, "ac_type": ac_type, "monthly_rent_paise": rent_paise})
         database.write_audit(
             connection,
             staff["id"],
@@ -947,7 +1065,8 @@ def platform_dashboard(account: dict[str, str] = Depends(current_platform_user))
             "AS subscription_pending_paise"
         ).fetchone()
         client_rows = connection.execute(
-            "SELECT owner.id AS owner_id, owner.username AS owner_username, hostel.id AS hostel_id, hostel.name AS hostel_name "
+            "SELECT owner.id AS owner_id, owner.username AS owner_username, hostel.id AS hostel_id, "
+            "hostel.name AS hostel_name, hostel.location_ciphertext, hostel.owner_mobile_ciphertext "
             "FROM hostels hostel JOIN staff owner ON owner.id = hostel.owner_id "
             "WHERE hostel.active = 1 ORDER BY owner.username COLLATE NOCASE, hostel.name COLLATE NOCASE"
         ).fetchall()
@@ -966,9 +1085,12 @@ def platform_dashboard(account: dict[str, str] = Depends(current_platform_user))
             "subscription.due_date, owner.username COLLATE NOCASE"
         ).fetchall()
         layout_rows = connection.execute(
-            "SELECT hostel.id AS hostel_id, hostel.name AS hostel_name, floor.id AS floor_id, floor.floor_number, "
-            "room.id AS room_id, room.room_number, room.share_count "
+            "SELECT hostel.id AS hostel_id, hostel.name AS hostel_name, hostel.ac_type, "
+            "hostel.address_ciphertext, hostel.location_ciphertext, hostel.owner_mobile_ciphertext, "
+            "floor.id AS floor_id, floor.floor_number, floor.floor_type, "
+            "room.id AS room_id, room.room_number, room.share_count, room.ac_type, room.monthly_rent_paise "
             "FROM hostels hostel LEFT JOIN floors floor ON floor.hostel_id = hostel.id "
+            "AND CAST(floor.active AS TEXT) IN ('1', 'true') "
             "LEFT JOIN rooms room ON room.floor_id = floor.id AND room.active = 1 "
             "WHERE hostel.active = 1 ORDER BY hostel.name COLLATE NOCASE, floor.floor_number, room.room_number COLLATE NOCASE"
         ).fetchall()
@@ -977,23 +1099,54 @@ def platform_dashboard(account: dict[str, str] = Depends(current_platform_user))
     floors_by_id: dict[str, dict[str, object]] = {}
     for row in layout_rows:
         hostel = hostels_by_id.setdefault(
-            row["hostel_id"], {"id": row["hostel_id"], "name": row["hostel_name"], "floors": []}
+            row["hostel_id"],
+            {
+                "id": row["hostel_id"],
+                "name": row["hostel_name"],
+                "ac_type": row["ac_type"],
+                "address": decrypt_text(row["address_ciphertext"]) if row["address_ciphertext"] else "",
+                "location": decrypt_text(row["location_ciphertext"]) if row["location_ciphertext"] else "",
+                "owner_mobile": decrypt_text(row["owner_mobile_ciphertext"]) if row["owner_mobile_ciphertext"] else "",
+                "floors": [],
+            },
         )
         if not row["floor_id"]:
             continue
         floor = floors_by_id.get(row["floor_id"])
         if floor is None:
-            floor = {"id": row["floor_id"], "floor_number": row["floor_number"], "rooms": []}
+            floor = {
+                "id": row["floor_id"],
+                "floor_number": row["floor_number"],
+                "floor_type": row["floor_type"],
+                "rooms": [],
+            }
             floors_by_id[row["floor_id"]] = floor
             hostel["floors"].append(floor)
         if row["room_id"]:
             floor["rooms"].append(
-                {"id": row["room_id"], "room_number": row["room_number"], "share_count": row["share_count"], "occupied": 0}
+                {
+                    "id": row["room_id"],
+                    "room_number": row["room_number"],
+                    "share_count": row["share_count"],
+                    "ac_type": row["ac_type"],
+                    "monthly_rent_paise": row["monthly_rent_paise"],
+                    "occupied": 0,
+                }
             )
     return {
         "user": account,
         "summary": dict(summary),
-        "clients": [dict(row) for row in client_rows],
+        "clients": [
+            {
+                "owner_id": row["owner_id"],
+                "owner_username": row["owner_username"],
+                "hostel_id": row["hostel_id"],
+                "hostel_name": row["hostel_name"],
+                "location": decrypt_text(row["location_ciphertext"]) if row["location_ciphertext"] else "",
+                "owner_mobile": decrypt_text(row["owner_mobile_ciphertext"]) if row["owner_mobile_ciphertext"] else "",
+            }
+            for row in client_rows
+        ],
         "owners": [dict(row) for row in owner_rows],
         "subscriptions": [dict(row) for row in subscription_rows],
         "hostels": list(hostels_by_id.values()),
@@ -1097,6 +1250,9 @@ def create_platform_client(
     now = datetime.now(timezone.utc).isoformat()
     owner_username = payload.owner_username.strip()
     hostel_name = payload.hostel_name.strip()
+    hostel_address = payload.hostel_address.strip()
+    location = payload.location.strip() if payload.location else ""
+    owner_mobile = _normalize_phone(payload.owner_mobile)
     if not hostel_name:
         raise HTTPException(status_code=422, detail="Enter a hostel name.")
     try:
@@ -1107,8 +1263,18 @@ def create_platform_client(
                 (owner_id, owner_id, owner_username, hash_password(payload.password), now),
             )
             connection.execute(
-                "INSERT INTO hostels (id, owner_id, name, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
-                (hostel_id, owner_id, hostel_name, owner_id, now),
+                "INSERT INTO hostels (id, owner_id, name, address_ciphertext, location_ciphertext, "
+                "owner_mobile_ciphertext, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    hostel_id,
+                    owner_id,
+                    hostel_name,
+                    encrypt_text(hostel_address),
+                    encrypt_text(location) if location else None,
+                    encrypt_text(owner_mobile),
+                    owner_id,
+                    now,
+                ),
             )
             database.write_audit(
                 connection,
@@ -1121,6 +1287,61 @@ def create_platform_client(
     except sqlite3.IntegrityError as error:
         raise HTTPException(status_code=409, detail="That owner username or hostel name is already in use.") from error
     return {"owner_id": owner_id, "owner_username": owner_username, "hostel_id": hostel_id, "hostel_name": hostel_name}
+
+
+@app.put("/api/platform/hostels/{hostel_id}/setup")
+def update_platform_hostel_setup(
+    hostel_id: str,
+    payload: PlatformHostelSetupRequest,
+    account: dict[str, str] = Depends(require_platform_write),
+) -> dict[str, object]:
+    floor_types = []
+    if "basement" in payload.floor_types:
+        floor_types.append("basement")
+    if "ground" in payload.floor_types:
+        floor_types.append("ground")
+    floor_types.extend(["standard"] * payload.upper_floor_count)
+    if "penthouse" in payload.floor_types:
+        floor_types.append("penthouse")
+    if not floor_types and payload.upper_floor_count == 0 or len(floor_types) > 99:
+        raise HTTPException(status_code=422, detail="Choose between 1 and 99 total floors.")
+    created_floors: list[dict[str, object]] = []
+    with database.transaction() as connection:
+        hostel = connection.execute(
+            "SELECT id FROM hostels WHERE id = ? AND active = 1", (hostel_id,)
+        ).fetchone()
+        if not hostel:
+            raise HTTPException(status_code=404, detail="Active hostel not found.")
+        rooms_exist = connection.execute(
+            "SELECT 1 FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
+            "WHERE floor.hostel_id = ? LIMIT 1",
+            (hostel_id,),
+        ).fetchone()
+        if rooms_exist:
+            raise HTTPException(status_code=409, detail="The floor setup cannot change after rooms are added.")
+        connection.execute("DELETE FROM floors WHERE hostel_id = ?", (hostel_id,))
+        connection.execute("UPDATE hostels SET ac_type = ? WHERE id = ?", (payload.ac_type, hostel_id))
+        for floor_number, floor_type in enumerate(floor_types, start=1):
+            floor_id = str(uuid.uuid4())
+            connection.execute(
+                "INSERT INTO floors (id, hostel_id, floor_number, floor_type, created_at) VALUES (?, ?, ?, ?, ?)",
+                (floor_id, hostel_id, floor_number, floor_type, datetime.now(timezone.utc).isoformat()),
+            )
+            created_floors.append({"id": floor_id, "floor_number": floor_number, "floor_type": floor_type})
+        database.write_audit(
+            connection,
+            None,
+            "platform.hostel_setup",
+            "hostel",
+            hostel_id,
+            {
+                "ac_type": payload.ac_type,
+                "floor_types": payload.floor_types,
+                "upper_floor_count": payload.upper_floor_count,
+                "updated_by": account["username"],
+            },
+        )
+    return {"hostel_id": hostel_id, "ac_type": payload.ac_type, "floors": created_floors}
 
 
 @app.post("/api/platform/hostels/{hostel_id}/floors", status_code=201)
@@ -1136,8 +1357,8 @@ def platform_create_floor(
             if not hostel:
                 raise HTTPException(status_code=404, detail="Active hostel not found.")
             connection.execute(
-                "INSERT INTO floors (id, hostel_id, floor_number, created_at) VALUES (?, ?, ?, ?)",
-                (floor_id, hostel_id, payload.floor_number, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO floors (id, hostel_id, floor_number, floor_type, created_at) VALUES (?, ?, ?, ?, ?)",
+                (floor_id, hostel_id, payload.floor_number, payload.floor_type, datetime.now(timezone.utc).isoformat()),
             )
             database.write_audit(
                 connection,
@@ -1145,11 +1366,21 @@ def platform_create_floor(
                 "platform.floor_create",
                 "floor",
                 floor_id,
-                {"hostel_id": hostel_id, "floor_number": payload.floor_number, "created_by": account["username"]},
+                {
+                    "hostel_id": hostel_id,
+                    "floor_number": payload.floor_number,
+                    "floor_type": payload.floor_type,
+                    "created_by": account["username"],
+                },
             )
     except sqlite3.IntegrityError as error:
         raise HTTPException(status_code=409, detail="That floor already exists in this hostel.") from error
-    return {"id": floor_id, "hostel_id": hostel_id, "floor_number": payload.floor_number}
+    return {
+        "id": floor_id,
+        "hostel_id": hostel_id,
+        "floor_number": payload.floor_number,
+        "floor_type": payload.floor_type,
+    }
 
 
 @app.post("/api/platform/hostels", status_code=201)
@@ -1197,23 +1428,27 @@ def platform_create_room(
     try:
         with database.transaction() as connection:
             floor = connection.execute(
-                "SELECT floor.floor_number, hostel.id AS hostel_id, hostel.name AS hostel_name "
+                "SELECT floor.floor_number, hostel.id AS hostel_id, hostel.name AS hostel_name, hostel.ac_type "
                 "FROM floors floor JOIN hostels hostel ON hostel.id = floor.hostel_id "
-                "WHERE floor.id = ? AND hostel.active = 1",
+                "WHERE floor.id = ? AND CAST(floor.active AS TEXT) IN ('1', 'true') AND hostel.active = 1",
                 (floor_id,),
             ).fetchone()
             if not floor:
                 raise HTTPException(status_code=404, detail="Floor not found.")
+            ac_type = payload.ac_type or ("ac" if floor["ac_type"] == "ac" else "non_ac")
+            if floor["ac_type"] == "ac" and ac_type != "ac":
+                raise HTTPException(status_code=422, detail="This hostel only supports AC rooms.")
             rent_paise = room_type_charge_or_fallback(
                 connection,
                 floor["hostel_id"],
                 payload.share_count,
+                ac_type,
                 rent_to_paise(str(payload.monthly_rent)),
             )
             connection.execute(
-                "INSERT INTO rooms (id, floor_id, room_number, share_count, monthly_rent_paise, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (room_id, floor_id, room_number, payload.share_count, rent_paise, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO rooms (id, floor_id, room_number, share_count, ac_type, monthly_rent_paise, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (room_id, floor_id, room_number, payload.share_count, ac_type, rent_paise, datetime.now(timezone.utc).isoformat()),
             )
             database.write_audit(
                 connection,
@@ -1221,7 +1456,7 @@ def platform_create_room(
                 "platform.room_create",
                 "room",
                 room_id,
-                {"hostel_id": floor["hostel_id"], "room_number": room_number, "share_count": payload.share_count, "created_by": account["username"]},
+                {"hostel_id": floor["hostel_id"], "room_number": room_number, "share_count": payload.share_count, "ac_type": ac_type, "created_by": account["username"]},
             )
     except sqlite3.IntegrityError as error:
         raise HTTPException(status_code=409, detail="That room number already exists on this floor.") from error
@@ -1230,8 +1465,62 @@ def platform_create_room(
         "floor_id": floor_id,
         "room_number": room_number,
         "share_count": payload.share_count,
+        "ac_type": ac_type,
         "monthly_rent_paise": rent_paise,
     }
+
+
+@app.delete("/api/platform/floors/{floor_id}")
+def delete_platform_floor(
+    floor_id: str,
+    account: dict[str, str] = Depends(require_platform_write),
+) -> dict[str, object]:
+    now = datetime.now(timezone.utc).isoformat()
+    with database.transaction() as connection:
+        floor = connection.execute(
+            "SELECT floor.floor_number, floor.floor_type, hostel.name AS hostel_name "
+            "FROM floors floor JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE floor.id = ? AND CAST(floor.active AS TEXT) IN ('1', 'true') AND hostel.active = 1",
+            (floor_id,),
+        ).fetchone()
+        if not floor:
+            raise HTTPException(status_code=404, detail="Active floor not found.")
+        occupied = connection.execute(
+            "SELECT COUNT(*) FROM residents resident JOIN rooms room ON room.id = resident.room_id "
+            "WHERE room.floor_id = ? AND resident.checked_out_at IS NULL",
+            (floor_id,),
+        ).fetchone()[0]
+        if occupied:
+            raise HTTPException(status_code=409, detail="Check out or move residents before deleting this floor.")
+        reserved = connection.execute(
+            "SELECT COUNT(*) FROM bookings booking JOIN rooms room ON room.id = booking.room_id_reserved "
+            "WHERE room.floor_id = ? AND booking.status = 'visit_booked' AND booking.cancelled_at IS NULL "
+            "AND booking.reservation_expires_at > ?",
+            (floor_id, now),
+        ).fetchone()[0]
+        if reserved:
+            raise HTTPException(status_code=409, detail="Cancel or expire reservations before deleting this floor.")
+        room_count = connection.execute(
+            "SELECT COUNT(*) FROM rooms WHERE floor_id = ? AND active = 1", (floor_id,)
+        ).fetchone()[0]
+        connection.execute("UPDATE rooms SET active = 0 WHERE floor_id = ? AND active = 1", (floor_id,))
+        connection.execute("UPDATE floors SET active = FALSE WHERE id = ?", (floor_id,))
+        database.write_audit(
+            connection,
+            None,
+            "platform.floor_delete",
+            "floor",
+            floor_id,
+            {
+                "hostel_name": floor["hostel_name"],
+                "floor_number": floor["floor_number"],
+                "floor_type": floor["floor_type"],
+                "rooms_archived": room_count,
+                "history_retained": True,
+                "deleted_by": account["username"],
+            },
+        )
+    return {"status": "deleted", "floor_number": floor["floor_number"], "rooms_archived": room_count}
 
 
 @app.post("/api/hostels", status_code=201)
@@ -1240,6 +1529,63 @@ def create_hostel(
     account: dict[str, str] = Depends(require_platform_write),
 ) -> dict[str, str]:
     return platform_create_hostel(payload, account)
+
+
+@app.put("/api/hostels/{hostel_id}/setup")
+def update_owner_hostel_setup(
+    hostel_id: str,
+    payload: PlatformHostelSetupRequest,
+    staff: dict[str, str] = Depends(require_admin),
+) -> dict[str, object]:
+    floor_types = []
+    if "basement" in payload.floor_types:
+        floor_types.append("basement")
+    if "ground" in payload.floor_types:
+        floor_types.append("ground")
+    floor_types.extend(["standard"] * payload.upper_floor_count)
+    if "penthouse" in payload.floor_types:
+        floor_types.append("penthouse")
+    if not floor_types or len(floor_types) > 99:
+        raise HTTPException(status_code=422, detail="Choose between 1 and 99 total floors.")
+
+    created_floors: list[dict[str, object]] = []
+    with database.transaction() as connection:
+        hostel = connection.execute(
+            "SELECT id FROM hostels WHERE id = ? AND active = 1 AND owner_id = ?",
+            (hostel_id, staff["owner_id"]),
+        ).fetchone()
+        if not hostel:
+            raise HTTPException(status_code=404, detail="Active hostel not found.")
+        rooms_exist = connection.execute(
+            "SELECT 1 FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
+            "WHERE floor.hostel_id = ? AND room.active = 1 LIMIT 1",
+            (hostel_id,),
+        ).fetchone()
+        if rooms_exist:
+            raise HTTPException(status_code=409, detail="Remove existing rooms before replacing the floor setup.")
+        connection.execute(
+            "UPDATE floors SET active = FALSE WHERE hostel_id = ? "
+            "AND CAST(active AS TEXT) IN ('1', 'true')",
+            (hostel_id,),
+        )
+        connection.execute("UPDATE hostels SET ac_type = ? WHERE id = ?", (payload.ac_type, hostel_id))
+        for floor_number, floor_type in enumerate(floor_types, start=1):
+            floor_id = str(uuid.uuid4())
+            connection.execute(
+                "INSERT INTO floors (id, hostel_id, floor_number, floor_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (floor_id, hostel_id, floor_number, floor_type, datetime.now(timezone.utc).isoformat()),
+            )
+            created_floors.append({"id": floor_id, "floor_number": floor_number, "floor_type": floor_type})
+        database.write_audit(
+            connection,
+            staff["id"],
+            "hostel.layout_setup",
+            "hostel",
+            hostel_id,
+            {"floor_count": len(floor_types), "ac_type": payload.ac_type},
+        )
+    return {"hostel_id": hostel_id, "ac_type": payload.ac_type, "floors": created_floors}
 
 
 @app.delete("/api/hostels/{hostel_id}")
@@ -1290,79 +1636,97 @@ def delete_hostel(hostel_id: str, staff: dict[str, str] = Depends(require_platfo
 def create_floor(
     hostel_id: str,
     payload: FloorRequest,
-    staff: dict[str, str] = Depends(require_platform_write),
+    staff: dict[str, str] = Depends(require_admin),
 ) -> dict[str, object]:
     floor_id = str(uuid.uuid4())
     try:
         with database.transaction() as connection:
             hostel = connection.execute(
-                "SELECT name FROM hostels WHERE id = ? AND active = 1",
-                (hostel_id,),
+                "SELECT name FROM hostels WHERE id = ? AND active = 1 AND owner_id = ?",
+                (hostel_id, staff["owner_id"]),
             ).fetchone()
             if not hostel:
                 raise HTTPException(status_code=404, detail="Hostel not found.")
             connection.execute(
-                "INSERT INTO floors (id, hostel_id, floor_number, created_at) VALUES (?, ?, ?, ?)",
-                (floor_id, hostel_id, payload.floor_number, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO floors (id, hostel_id, floor_number, floor_type, created_at) VALUES (?, ?, ?, ?, ?)",
+                (floor_id, hostel_id, payload.floor_number, payload.floor_type, datetime.now(timezone.utc).isoformat()),
             )
             database.write_audit(
                 connection,
-                None,
+                staff["id"],
                 "floor.create",
                 "floor",
                 floor_id,
-                {"hostel_id": hostel_id, "floor_number": payload.floor_number, "created_by": staff["username"]},
+                {
+                    "hostel_id": hostel_id,
+                    "floor_number": payload.floor_number,
+                    "floor_type": payload.floor_type,
+                    "created_by": staff["username"],
+                },
             )
     except sqlite3.IntegrityError as error:
         raise HTTPException(status_code=409, detail="That floor already exists in this hostel.") from error
-    return {"id": floor_id, "hostel_id": hostel_id, "floor_number": payload.floor_number, "name": floor_name(payload.floor_number)}
+    return {
+        "id": floor_id,
+        "hostel_id": hostel_id,
+        "floor_number": payload.floor_number,
+        "floor_type": payload.floor_type,
+        "name": floor_name(payload.floor_number),
+    }
 
 
 @app.post("/api/floors/{floor_id}/rooms", status_code=201)
 def create_room(
     floor_id: str,
     payload: RoomRequest,
-    staff: dict[str, str] = Depends(require_platform_write),
+    staff: dict[str, str] = Depends(require_admin),
 ) -> dict[str, object]:
     room_id = str(uuid.uuid4())
     room_number = payload.room_number.strip()
     try:
         with database.transaction() as connection:
             floor = connection.execute(
-                "SELECT floor_number, hostel.id AS hostel_id, hostel.name AS hostel_name "
+                "SELECT floor_number, hostel.id AS hostel_id, hostel.name AS hostel_name, hostel.ac_type "
                 "FROM floors JOIN hostels hostel ON hostel.id = floors.hostel_id "
-                "WHERE floors.id = ? AND hostel.active = 1",
-                (floor_id,),
+                "WHERE floors.id = ? AND CAST(floors.active AS TEXT) IN ('1', 'true') "
+                "AND hostel.active = 1 AND hostel.owner_id = ?",
+                (floor_id, staff["owner_id"]),
             ).fetchone()
             if not floor:
                 raise HTTPException(status_code=404, detail="Floor not found.")
+            ac_type = payload.ac_type or ("ac" if floor["ac_type"] == "ac" else "non_ac")
+            if floor["ac_type"] == "ac" and ac_type != "ac":
+                raise HTTPException(status_code=422, detail="This hostel only supports AC rooms.")
             rent_paise = room_type_charge_or_fallback(
                 connection,
                 floor["hostel_id"],
                 payload.share_count,
+                ac_type,
                 rent_to_paise(str(payload.monthly_rent)),
             )
             connection.execute(
-                "INSERT INTO rooms (id, floor_id, room_number, share_count, monthly_rent_paise, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO rooms (id, floor_id, room_number, share_count, ac_type, monthly_rent_paise, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     room_id,
                     floor_id,
                     room_number,
                     payload.share_count,
+                    ac_type,
                     rent_paise,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
             database.write_audit(
                 connection,
-                None,
+                staff["id"],
                 "room.create",
                 "room",
                 room_id,
                 {
                     "room_number": room_number,
                     "share_count": payload.share_count,
+                    "ac_type": ac_type,
                     "floor_number": floor["floor_number"],
                     "hostel_name": floor["hostel_name"],
                     "created_by": staff["username"],
@@ -1375,11 +1739,62 @@ def create_room(
         "floor_id": floor_id,
         "room_number": room_number,
         "share_count": payload.share_count,
+        "ac_type": ac_type,
         "monthly_rent_paise": rent_paise,
         "floor_number": floor["floor_number"],
         "hostel_id": floor["hostel_id"],
         "hostel_name": floor["hostel_name"],
     }
+
+
+@app.delete("/api/floors/{floor_id}")
+def delete_owner_floor(floor_id: str, staff: dict[str, str] = Depends(require_admin)) -> dict[str, object]:
+    now = datetime.now(timezone.utc).isoformat()
+    with database.transaction() as connection:
+        floor = connection.execute(
+            "SELECT floor.floor_number, floor.floor_type, hostel.name AS hostel_name "
+            "FROM floors floor JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE floor.id = ? AND CAST(floor.active AS TEXT) IN ('1', 'true') "
+            "AND hostel.active = 1 AND hostel.owner_id = ?",
+            (floor_id, staff["owner_id"]),
+        ).fetchone()
+        if not floor:
+            raise HTTPException(status_code=404, detail="Active floor not found.")
+        occupied = connection.execute(
+            "SELECT COUNT(*) FROM residents resident JOIN rooms room ON room.id = resident.room_id "
+            "WHERE room.floor_id = ? AND resident.checked_out_at IS NULL",
+            (floor_id,),
+        ).fetchone()[0]
+        if occupied:
+            raise HTTPException(status_code=409, detail="Check out or move residents before deleting this floor.")
+        reserved = connection.execute(
+            "SELECT COUNT(*) FROM bookings booking JOIN rooms room ON room.id = booking.room_id_reserved "
+            "WHERE room.floor_id = ? AND booking.status = 'visit_booked' AND booking.cancelled_at IS NULL "
+            "AND booking.reservation_expires_at > ?",
+            (floor_id, now),
+        ).fetchone()[0]
+        if reserved:
+            raise HTTPException(status_code=409, detail="Cancel or expire reservations before deleting this floor.")
+        room_count = connection.execute(
+            "SELECT COUNT(*) FROM rooms WHERE floor_id = ? AND active = 1", (floor_id,)
+        ).fetchone()[0]
+        connection.execute("UPDATE rooms SET active = 0 WHERE floor_id = ? AND active = 1", (floor_id,))
+        connection.execute("UPDATE floors SET active = FALSE WHERE id = ?", (floor_id,))
+        database.write_audit(
+            connection,
+            staff["id"],
+            "floor.delete",
+            "floor",
+            floor_id,
+            {
+                "hostel_name": floor["hostel_name"],
+                "floor_number": floor["floor_number"],
+                "floor_type": floor["floor_type"],
+                "rooms_archived": room_count,
+                "history_retained": True,
+            },
+        )
+    return {"status": "deleted", "floor_number": floor["floor_number"], "rooms_archived": room_count}
 
 
 def floor_name(floor_number: int) -> str:
@@ -1441,10 +1856,28 @@ def _vacancy_payload(
 
 
 def _normalize_phone(phone: str) -> str:
-    normalized = re.sub(r"[\s()-]", "", phone)
-    if not re.fullmatch(r"\+?[0-9]{10,15}", normalized):
-        raise HTTPException(status_code=422, detail="Enter a valid phone number with country code.")
-    return normalized if normalized.startswith("+") else f"+{normalized}"
+    normalized = re.sub(r"[\s().-]", "", phone)
+    if normalized.startswith("00"):
+        normalized = f"+{normalized[2:]}"
+    elif not normalized.startswith("+"):
+        if re.fullmatch(r"[0-9]{10}", normalized):
+            normalized = f"+91{normalized}"
+        elif re.fullmatch(r"0[0-9]{10}", normalized):
+            normalized = f"+91{normalized[1:]}"
+        else:
+            normalized = f"+{normalized}"
+    if not re.fullmatch(r"\+[0-9]{10,15}", normalized):
+        raise HTTPException(status_code=422, detail="Enter a valid phone number.")
+    return normalized
+
+
+def _whatsapp_recipient_number(phone: str) -> str:
+    digits = re.sub(r"\D", "", _normalize_phone(phone))
+    if len(digits) == 10:
+        return f"91{digits}"
+    if digits.startswith("0") and len(digits) == 11:
+        return f"91{digits[1:]}"
+    return digits
 
 
 def _reserve_booking(
@@ -2003,6 +2436,35 @@ async def _send_whatsapp_message(to: str, message: str) -> None:
         response.raise_for_status()
 
 
+async def _send_whatsapp_template_message(to: str, message: str) -> None:
+    if not config.WHATSAPP_ACCESS_TOKEN or not config.WHATSAPP_PHONE_NUMBER_ID:
+        raise HTTPException(status_code=503, detail="WhatsApp Cloud API credentials are not configured.")
+    if not config.WHATSAPP_BROADCAST_TEMPLATE:
+        raise HTTPException(status_code=503, detail="An approved WhatsApp broadcast template is not configured.")
+    url = f"https://graph.facebook.com/{config.WHATSAPP_API_VERSION}/{config.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.post(
+            url,
+            headers={"Authorization": f"Bearer {config.WHATSAPP_ACCESS_TOKEN}"},
+            json={
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "template",
+                "template": {
+                    "name": config.WHATSAPP_BROADCAST_TEMPLATE,
+                    "language": {"code": config.WHATSAPP_BROADCAST_LANGUAGE},
+                    "components": [
+                        {
+                            "type": "body",
+                            "parameters": [{"type": "text", "text": message}],
+                        }
+                    ],
+                },
+            },
+        )
+        response.raise_for_status()
+
+
 @app.get("/api/webhook/whatsapp")
 def verify_whatsapp_webhook(
     hub_mode: str | None = Query(default=None, alias="hub.mode"),
@@ -2143,15 +2605,24 @@ async def whatsapp_webhook(request: Request) -> dict[str, str]:
 
 
 @app.delete("/api/rooms/{room_id}")
-def delete_room(room_id: str, staff: dict[str, str] = Depends(require_platform_write)) -> dict[str, str]:
+def delete_room(room_id: str, staff: dict[str, str] = Depends(require_staff_or_platform)) -> dict[str, str]:
     with database.transaction() as connection:
-        room = connection.execute(
-            "SELECT room.id, room.room_number, hostel.name AS hostel_name, floor.floor_number "
-            "FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
-            "JOIN hostels hostel ON hostel.id = floor.hostel_id "
-            "WHERE room.id = ? AND room.active = 1 AND hostel.active = 1",
-            (room_id,),
-        ).fetchone()
+        if staff.get("role") == "developer":
+            room = connection.execute(
+                "SELECT room.id, room.room_number, hostel.name AS hostel_name, floor.floor_number "
+                "FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
+                "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+                "WHERE room.id = ? AND room.active = 1 AND hostel.active = 1",
+                (room_id,),
+            ).fetchone()
+        else:
+            room = connection.execute(
+                "SELECT room.id, room.room_number, hostel.name AS hostel_name, floor.floor_number "
+                "FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
+                "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+                "WHERE room.id = ? AND room.active = 1 AND hostel.active = 1 AND hostel.owner_id = ?",
+                (room_id, staff["owner_id"]),
+            ).fetchone()
         if not room:
             raise HTTPException(status_code=404, detail="Active room not found.")
         occupied = connection.execute(
@@ -2185,6 +2656,416 @@ def delete_room(room_id: str, staff: dict[str, str] = Depends(require_platform_w
     return {"status": "deleted", "room_number": room["room_number"]}
 
 
+@app.get("/api/registration-workspace")
+def registration_workspace(staff: dict[str, str] = Depends(require_admin_read)) -> dict[str, object]:
+    with database.read_connection() as connection:
+        invite_rows = connection.execute(
+            "SELECT invite.id, hostel.name AS hostel_name, invite.created_at, invite.expires_at, "
+            "invite.used_at, invite.revoked_at FROM registration_invites invite "
+            "JOIN hostels hostel ON hostel.id = invite.hostel_id "
+            "WHERE hostel.owner_id = ? ORDER BY invite.created_at DESC LIMIT 100",
+            (staff["owner_id"],),
+        ).fetchall()
+        application_rows = connection.execute(
+            "SELECT application.*, hostel.name AS hostel_name FROM registration_applications application "
+            "JOIN hostels hostel ON hostel.id = application.hostel_id "
+            "WHERE application.status = 'pending' AND hostel.owner_id = ? "
+            "ORDER BY application.submitted_at",
+            (staff["owner_id"],),
+        ).fetchall()
+    applications = []
+    for row in application_rows:
+        aadhaar = decrypt_text(row["aadhaar_ciphertext"]) if row["aadhaar_ciphertext"] else ""
+        documents = []
+        if row["person_photo_path"]:
+            documents.append(
+                {
+                    "kind": "person_photo",
+                    "url": f"/api/registration-applications/{row['id']}/documents/person_photo",
+                }
+            )
+        if row["aadhaar_photo_path"]:
+            documents.append(
+                {
+                    "kind": "aadhaar_photo",
+                    "url": f"/api/registration-applications/{row['id']}/documents/aadhaar_photo",
+                }
+            )
+        applications.append(
+            {
+                "id": row["id"],
+                "name": decrypt_text(row["name_ciphertext"]),
+                "mobile": decrypt_text(row["mobile_ciphertext"]),
+                "aadhaar_last4": aadhaar[-4:] if aadhaar else "",
+                "hostel_id": row["hostel_id"],
+                "hostel_name": row["hostel_name"],
+                "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
+                "submitted_at": row["submitted_at"],
+                "documents": documents,
+            }
+        )
+    return {
+        "invites": [
+            {
+                "id": row["id"],
+                "hostel_name": row["hostel_name"],
+                "created_at": row["created_at"],
+                "expires_at": row["expires_at"],
+                "used_at": row["used_at"],
+                "revoked_at": row["revoked_at"],
+            }
+            for row in invite_rows
+        ],
+        "applications": applications,
+    }
+
+
+@app.post("/api/registration-invites", status_code=201)
+def create_registration_invite(
+    payload: RegistrationInviteRequest,
+    staff: dict[str, str] = Depends(require_admin),
+) -> dict[str, str]:
+    now = datetime.now(timezone.utc)
+    token = new_token()
+    invite_id = str(uuid.uuid4())
+    expires_at = (now + timedelta(days=payload.expires_in_days)).isoformat()
+    with database.transaction() as connection:
+        hostel = connection.execute(
+            "SELECT id, name FROM hostels WHERE id = ? AND owner_id = ? AND active = 1",
+            (payload.hostel_id, staff["owner_id"]),
+        ).fetchone()
+        if not hostel:
+            raise HTTPException(status_code=404, detail="Active hostel not found.")
+        connection.execute(
+            "INSERT INTO registration_invites "
+            "(id, hostel_id, token_hash, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (invite_id, hostel["id"], hash_session_token(token), expires_at, staff["id"], now.isoformat()),
+        )
+        database.write_audit(
+            connection,
+            staff["id"],
+            "registration.invite.create",
+            "registration_invite",
+            invite_id,
+            {"hostel_id": hostel["id"], "expires_at": expires_at},
+        )
+    return {"id": invite_id, "path": f"/register/{token}", "expires_at": expires_at}
+
+
+@app.post("/api/registration-invites/{invite_id}/revoke")
+def revoke_registration_invite(
+    invite_id: str,
+    staff: dict[str, str] = Depends(require_admin),
+) -> dict[str, str]:
+    now = datetime.now(timezone.utc).isoformat()
+    with database.transaction() as connection:
+        invite = connection.execute(
+            "SELECT invite.id, invite.used_at, invite.revoked_at FROM registration_invites invite "
+            "JOIN hostels hostel ON hostel.id = invite.hostel_id "
+            "WHERE invite.id = ? AND hostel.owner_id = ?",
+            (invite_id, staff["owner_id"]),
+        ).fetchone()
+        if not invite:
+            raise HTTPException(status_code=404, detail="Registration invitation not found.")
+        if invite["used_at"]:
+            raise HTTPException(status_code=409, detail="This invitation has already been used.")
+        if invite["revoked_at"]:
+            raise HTTPException(status_code=409, detail="This invitation has already been revoked.")
+        connection.execute(
+            "UPDATE registration_invites SET revoked_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL",
+            (now, invite_id),
+        )
+        database.write_audit(
+            connection,
+            staff["id"],
+            "registration.invite.revoke",
+            "registration_invite",
+            invite_id,
+        )
+    return {"status": "revoked"}
+
+
+def active_registration_invite(token: str) -> sqlite3.Row:
+    if not re.fullmatch(r"[a-f0-9]{64}", token):
+        raise HTTPException(status_code=410, detail="This registration link is invalid or no longer active.")
+    now = datetime.now(timezone.utc).isoformat()
+    with database.read_connection() as connection:
+        invite = connection.execute(
+            "SELECT invite.id, invite.hostel_id, hostel.name AS hostel_name FROM registration_invites invite "
+            "JOIN hostels hostel ON hostel.id = invite.hostel_id "
+            "WHERE invite.token_hash = ? AND invite.used_at IS NULL AND invite.revoked_at IS NULL "
+            "AND invite.expires_at > ? AND hostel.active = 1",
+            (hash_session_token(token), now),
+        ).fetchone()
+    if not invite:
+        raise HTTPException(status_code=410, detail="This registration link has expired or was already used.")
+    return invite
+
+
+@app.get("/api/join/{token}")
+def get_join_registration(token: str) -> dict[str, str]:
+    invite = active_registration_invite(token)
+    return {"hostel_name": invite["hostel_name"]}
+
+
+@app.post("/api/join/{token}", status_code=201)
+async def submit_join_registration(
+    token: str,
+    name: str = Form(min_length=1, max_length=80),
+    mobile: str = Form(min_length=10, max_length=20),
+    aadhaar: str = Form(default="", max_length=14),
+    consent: str = Form(),
+    whatsapp_opt_in: bool = Form(default=False),
+    person_photo: UploadFile | None = File(default=None),
+    aadhaar_photo: UploadFile | None = File(default=None),
+) -> dict[str, str]:
+    invite = active_registration_invite(token)
+    name, mobile = name.strip(), mobile.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Enter a valid full name.")
+    normalized_mobile = _normalize_phone(mobile)
+    normalized_aadhaar = re.sub(r"\s", "", aadhaar)
+    if normalized_aadhaar and not re.fullmatch(r"[0-9]{12}", normalized_aadhaar):
+        raise HTTPException(status_code=422, detail="Aadhaar must contain 12 digits when provided.")
+    if consent.lower() not in {"true", "on", "yes", "1"}:
+        raise HTTPException(status_code=422, detail="Consent is required to submit this registration.")
+
+    person_image = await read_optional_image(person_photo, "Person photo")
+    aadhaar_image = await read_optional_image(aadhaar_photo, "Aadhaar photo")
+    if not person_image:
+        raise HTTPException(status_code=422, detail="A person photo is required.")
+    application_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    stored_documents: dict[str, tuple[str, str]] = {}
+    try:
+        for kind, image in (("person_photo", person_image), ("aadhaar_photo", aadhaar_image)):
+            if image:
+                contents, media_type = image
+                stored_documents[kind] = (save_encrypted_document(contents), media_type)
+        with database.transaction() as connection:
+            updated = connection.execute(
+                "UPDATE registration_invites SET used_at = ? WHERE id = ? AND token_hash = ? "
+                "AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ? "
+                "AND EXISTS (SELECT 1 FROM hostels WHERE hostels.id = registration_invites.hostel_id "
+                "AND hostels.active = 1)",
+                (now, invite["id"], hash_session_token(token), now),
+            )
+            if updated.rowcount != 1:
+                raise HTTPException(status_code=410, detail="This registration link has expired or was already used.")
+            connection.execute(
+                "INSERT INTO registration_applications "
+                "(id, invite_id, hostel_id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, whatsapp_opt_in, "
+                "person_photo_path, person_photo_media_type, aadhaar_photo_path, aadhaar_photo_media_type, submitted_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    application_id,
+                    invite["id"],
+                    invite["hostel_id"],
+                    encrypt_text(name),
+                    encrypt_text(normalized_mobile),
+                    encrypt_text(normalized_aadhaar) if normalized_aadhaar else None,
+                    int(whatsapp_opt_in),
+                    stored_documents.get("person_photo", (None, None))[0],
+                    stored_documents.get("person_photo", (None, None))[1],
+                    stored_documents.get("aadhaar_photo", (None, None))[0],
+                    stored_documents.get("aadhaar_photo", (None, None))[1],
+                    now,
+                ),
+            )
+            database.write_audit(
+                connection,
+                None,
+                "registration.application.submit",
+                "registration_application",
+                application_id,
+                {"hostel_id": invite["hostel_id"]},
+            )
+    except Exception:
+        for encrypted_path, _ in stored_documents.values():
+            remove_local_encrypted_document(encrypted_path)
+        raise
+    return {"status": "submitted"}
+
+
+@app.get("/api/registration-applications/{application_id}/documents/{kind}")
+def download_registration_document(
+    application_id: str,
+    kind: str,
+    staff: dict[str, str] = Depends(require_admin_read),
+) -> Response:
+    path_column = {
+        "person_photo": "person_photo_path",
+        "aadhaar_photo": "aadhaar_photo_path",
+    }.get(kind)
+    media_type_column = {
+        "person_photo": "person_photo_media_type",
+        "aadhaar_photo": "aadhaar_photo_media_type",
+    }.get(kind)
+    if not path_column or not media_type_column:
+        raise HTTPException(status_code=404, detail="Registration document not found.")
+    with database.transaction() as connection:
+        row = connection.execute(
+            f"SELECT application.{path_column} AS encrypted_path, "
+            f"application.{media_type_column} AS media_type FROM registration_applications application "
+            "JOIN hostels hostel ON hostel.id = application.hostel_id "
+            "WHERE application.id = ? AND hostel.owner_id = ? AND application.status = 'pending'",
+            (application_id, staff["owner_id"]),
+        ).fetchone()
+        if not row or not row["encrypted_path"]:
+            raise HTTPException(status_code=404, detail="Registration document not found.")
+        database.write_audit(
+            connection,
+            staff["id"],
+            "registration.document.download",
+            "registration_application",
+            application_id,
+            {"kind": kind},
+        )
+    return Response(
+        content=read_document(row["encrypted_path"]),
+        media_type=row["media_type"],
+        headers={"Content-Disposition": "attachment; filename=registration-document", "Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/registration-applications/{application_id}/approve")
+def approve_registration_application(
+    application_id: str,
+    payload: RegistrationApprovalRequest,
+    staff: dict[str, str] = Depends(require_admin),
+) -> dict[str, str]:
+    name = None
+    joined = parse_date(payload.joining_date, "joining date")
+    payment_due = due_date_after_one_month(joined)
+    if payload.payment_status == "unpaid":
+        amount_due_paise = amount_to_paise(str(payload.amount_due))
+    else:
+        if payload.amount_due:
+            raise HTTPException(status_code=422, detail="A paid resident cannot have an outstanding balance.")
+        amount_due_paise = 0
+    resident_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with database.transaction() as connection:
+        application = connection.execute(
+            "SELECT application.*, hostel.owner_id FROM registration_applications application "
+            "JOIN hostels hostel ON hostel.id = application.hostel_id "
+            "WHERE application.id = ? AND application.status = 'pending' AND hostel.owner_id = ?",
+            (application_id, staff["owner_id"]),
+        ).fetchone()
+        if not application:
+            raise HTTPException(status_code=404, detail="Pending registration application not found.")
+        claimed = connection.execute(
+            "UPDATE registration_applications SET status = 'approved', reviewed_at = ?, reviewed_by = ? "
+            "WHERE id = ? AND status = 'pending'",
+            (now, staff["id"], application_id),
+        )
+        if claimed.rowcount != 1:
+            raise HTTPException(status_code=409, detail="This application has already been reviewed.")
+        room = connection.execute(
+            "SELECT room.room_number, room.share_count, room.floor_id, floor.floor_number, hostel.id AS hostel_id, "
+            "hostel.name AS hostel_name FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
+            "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE room.id = ? AND room.active = 1 AND hostel.active = 1 AND hostel.owner_id = ? "
+            "AND hostel.id = ?",
+            (payload.room_id, staff["owner_id"], application["hostel_id"]),
+        ).fetchone()
+        if not room:
+            raise HTTPException(status_code=422, detail="Choose a valid room in the applicant's hostel.")
+        if payload.bed_number > room["share_count"]:
+            raise HTTPException(status_code=422, detail="That bed number exceeds this room's sharing capacity.")
+        reserved = connection.execute(
+            "SELECT 1 FROM bookings WHERE room_id_reserved = ? AND status = 'visit_booked' "
+            "AND cancelled_at IS NULL AND reservation_expires_at > ? LIMIT 1",
+            (payload.room_id, now),
+        ).fetchone()
+        if reserved:
+            raise HTTPException(status_code=409, detail="This room is reserved for a visit. Choose another room.")
+        occupied = connection.execute(
+            "SELECT 1 FROM residents WHERE room_id = ? AND bed_number = ? AND checked_out_at IS NULL",
+            (payload.room_id, payload.bed_number),
+        ).fetchone()
+        if occupied:
+            raise HTTPException(status_code=409, detail="That bed is already occupied. Choose another bed.")
+        name = decrypt_text(application["name_ciphertext"])
+        connection.execute(
+            "INSERT INTO residents (id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, room_id, "
+            "bed_number, joining_date, payment_due_date, payment_status, amount_due_paise, whatsapp_opt_in, "
+            "created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                resident_id,
+                application["name_ciphertext"],
+                application["mobile_ciphertext"],
+                application["aadhaar_ciphertext"],
+                payload.room_id,
+                payload.bed_number,
+                joined.isoformat(),
+                payment_due.isoformat(),
+                payload.payment_status,
+                amount_due_paise,
+                application["whatsapp_opt_in"],
+                staff["id"],
+                now,
+            ),
+        )
+        for kind, path_column, media_type_column in (
+            ("person_photo", "person_photo_path", "person_photo_media_type"),
+            ("aadhaar_photo", "aadhaar_photo_path", "aadhaar_photo_media_type"),
+        ):
+            encrypted_path = application[path_column]
+            if encrypted_path:
+                document_id = str(uuid.uuid4())
+                connection.execute(
+                    "INSERT INTO documents (id, resident_id, kind, encrypted_path, media_type, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (document_id, resident_id, kind, encrypted_path, application[media_type_column], now),
+                )
+                database.write_audit(
+                    connection,
+                    staff["id"],
+                    "document.upload",
+                    "document",
+                    document_id,
+                    {"resident_id": resident_id, "kind": kind},
+                )
+        connection.execute(
+            "UPDATE registration_applications SET resident_id = ? WHERE id = ? AND status = 'approved' "
+            "AND reviewed_by = ?",
+            (resident_id, application_id, staff["id"]),
+        )
+        connection.execute(
+            "UPDATE registration_invites SET used_at = COALESCE(used_at, ?) WHERE id = ?",
+            (now, application["invite_id"]),
+        )
+        database.write_audit(
+            connection,
+            staff["id"],
+            "registration.application.approve",
+            "registration_application",
+            application_id,
+            {"resident_id": resident_id, "room_id": payload.room_id, "bed_number": payload.bed_number},
+        )
+        database.write_audit(
+            connection,
+            staff["id"],
+            "resident.checkin",
+            "resident",
+            resident_id,
+            {
+                "room": room["room_number"],
+                "room_id": payload.room_id,
+                "room_number": room["room_number"],
+                "hostel_name": room["hostel_name"],
+                "floor_number": room["floor_number"],
+                "bed_number": payload.bed_number,
+                "payment_status": payload.payment_status,
+                "amount_due_paise": amount_due_paise,
+                "payment_due_date": payment_due.isoformat(),
+                "registration_application_id": application_id,
+            },
+        )
+    return {"status": "approved", "resident_id": resident_id, "name": name or ""}
+
+
 @app.post("/api/residents", status_code=201)
 async def create_resident(
     name: str = Form(min_length=1, max_length=80),
@@ -2195,16 +3076,15 @@ async def create_resident(
     joining_date: str = Form(),
     payment_status: Literal["paid", "unpaid"] = Form(),
     amount_due: str = Form(default=""),
+    whatsapp_opt_in: bool = Form(default=False),
     person_photo: UploadFile | None = File(default=None),
     aadhaar_photo: UploadFile | None = File(default=None),
     staff: dict[str, str] = Depends(require_write),
 ) -> dict[str, str]:
     name, mobile = name.strip(), mobile.strip()
-    normalized_mobile = re.sub(r"[\s()-]", "", mobile)
     if not name or len(name) > 80:
         raise HTTPException(status_code=422, detail="Enter a valid full name.")
-    if not re.fullmatch(r"\+?[0-9]{10,15}", normalized_mobile):
-        raise HTTPException(status_code=422, detail="Enter a valid mobile number.")
+    normalized_mobile = _normalize_phone(mobile)
     normalized_aadhaar = re.sub(r"\s", "", aadhaar)
     if normalized_aadhaar and not re.fullmatch(r"[0-9]{12}", normalized_aadhaar):
         raise HTTPException(status_code=422, detail="Aadhaar must contain 12 digits when provided.")
@@ -2245,8 +3125,8 @@ async def create_resident(
                 raise HTTPException(status_code=422, detail="That bed number exceeds this room's sharing capacity.")
             connection.execute(
                 "INSERT INTO residents (id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, room_id, "
-                "bed_number, joining_date, payment_due_date, payment_status, amount_due_paise, created_by, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "bed_number, joining_date, payment_due_date, payment_status, amount_due_paise, whatsapp_opt_in, "
+                "created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     resident_id,
                     encrypt_text(name),
@@ -2258,6 +3138,7 @@ async def create_resident(
                     payment_due.isoformat(),
                     payment_status,
                     amount_due_paise,
+                    int(whatsapp_opt_in),
                     staff["id"],
                     created_at,
                 ),
@@ -2306,6 +3187,131 @@ async def create_resident(
             remove_local_encrypted_document(encrypted_path)
         raise
     return {"id": resident_id}
+
+
+@app.patch("/api/residents/{resident_id}/whatsapp-consent")
+def update_resident_whatsapp_consent(
+    resident_id: str,
+    payload: WhatsAppConsentRequest,
+    staff: dict[str, str] = Depends(require_write),
+) -> dict[str, bool]:
+    with database.transaction() as connection:
+        row = connection.execute(
+            "SELECT resident.whatsapp_opt_in FROM residents resident "
+            "JOIN rooms room ON room.id = resident.room_id JOIN floors floor ON floor.id = room.floor_id "
+            "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE resident.id = ? AND resident.checked_out_at IS NULL AND hostel.owner_id = ?",
+            (resident_id, staff["owner_id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Active resident not found.")
+        connection.execute(
+            "UPDATE residents SET whatsapp_opt_in = ? WHERE id = ? AND checked_out_at IS NULL",
+            (int(payload.enabled), resident_id),
+        )
+        database.write_audit(
+            connection,
+            staff["id"],
+            "resident.whatsapp_consent",
+            "resident",
+            resident_id,
+            {"enabled": payload.enabled, "previous_enabled": bool(row["whatsapp_opt_in"])},
+        )
+    return {"whatsapp_opt_in": payload.enabled}
+
+
+@app.get("/api/whatsapp/broadcast-status")
+def whatsapp_broadcast_status(staff: dict[str, str] = Depends(require_admin_read)) -> dict[str, object]:
+    missing = []
+    if not config.WHATSAPP_ACCESS_TOKEN or not config.WHATSAPP_PHONE_NUMBER_ID:
+        missing.append("WhatsApp Cloud API credentials")
+    if not config.WHATSAPP_BROADCAST_TEMPLATE:
+        missing.append("an approved WhatsApp broadcast template")
+    return {
+        "ready": not missing,
+        "reason": (
+            "WhatsApp broadcasts are ready."
+            if not missing
+            else f"Sending is disabled until you configure {' and '.join(missing)}."
+        ),
+    }
+
+
+@app.post("/api/whatsapp/broadcast")
+async def send_whatsapp_broadcast(
+    payload: WhatsAppBroadcastRequest,
+    staff: dict[str, str] = Depends(require_admin),
+) -> dict[str, object]:
+    if not config.WHATSAPP_ACCESS_TOKEN or not config.WHATSAPP_PHONE_NUMBER_ID:
+        raise HTTPException(status_code=503, detail="WhatsApp Cloud API credentials are not configured.")
+    if not config.WHATSAPP_BROADCAST_TEMPLATE:
+        raise HTTPException(
+            status_code=503,
+            detail="An approved WhatsApp broadcast template must be configured before sending.",
+        )
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Enter an announcement message.")
+    with database.read_connection() as connection:
+        hostel = connection.execute(
+            "SELECT id FROM hostels WHERE id = ? AND owner_id = ? AND active = 1",
+            (payload.hostel_id, staff["owner_id"]),
+        ).fetchone()
+        if not hostel:
+            raise HTTPException(status_code=404, detail="Active hostel not found.")
+        recipients = connection.execute(
+            "SELECT resident.id, resident.name_ciphertext, resident.mobile_ciphertext FROM residents resident "
+            "JOIN rooms room ON room.id = resident.room_id JOIN floors floor ON floor.id = room.floor_id "
+            "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE hostel.id = ? AND hostel.owner_id = ? AND hostel.active = 1 "
+            "AND resident.checked_out_at IS NULL AND resident.whatsapp_opt_in = 1 "
+            "ORDER BY resident.created_at",
+            (payload.hostel_id, staff["owner_id"]),
+        ).fetchall()
+    if not recipients:
+        raise HTTPException(status_code=409, detail="No active guests in this hostel have opted in to WhatsApp updates.")
+
+    semaphore = asyncio.Semaphore(5)
+
+    async def send_one(recipient: sqlite3.Row) -> tuple[bool, dict[str, str] | None]:
+        try:
+            async with semaphore:
+                await _send_whatsapp_template_message(
+                    _whatsapp_recipient_number(decrypt_text(recipient["mobile_ciphertext"])),
+                    message,
+                )
+        except (httpx.HTTPError, HTTPException) as error:
+            logger.warning(
+                "WhatsApp broadcast delivery failed for resident %s (%s).",
+                recipient["id"],
+                type(error).__name__,
+            )
+            return False, {"id": recipient["id"], "name": decrypt_text(recipient["name_ciphertext"])}
+        return True, None
+
+    delivery_results = await asyncio.gather(*(send_one(recipient) for recipient in recipients))
+    failed_residents = [failure for sent, failure in delivery_results if not sent and failure]
+    sent_count = len(delivery_results) - len(failed_residents)
+    with database.transaction() as connection:
+        database.write_audit(
+            connection,
+            staff["id"],
+            "whatsapp.broadcast",
+            "hostel",
+            payload.hostel_id,
+            {
+                "recipient_count": len(recipients),
+                "sent_count": sent_count,
+                "failed_count": len(failed_residents),
+                "message_sha256": hashlib.sha256(message.encode("utf-8")).hexdigest(),
+            },
+        )
+    return {
+        "recipient_count": len(recipients),
+        "sent_count": sent_count,
+        "failed_count": len(failed_residents),
+        "failed_residents": failed_residents,
+    }
 
 
 @app.post("/api/residents/{resident_id}/payment")

@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "index.py": {
+    "api/[...path].py": {
       "includeFiles": "app/**,static/**,index.html"
     }
   }

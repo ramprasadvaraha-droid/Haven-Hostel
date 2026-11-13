@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS hostels (
     owner_id TEXT REFERENCES staff(id),
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    ac_type TEXT NOT NULL DEFAULT 'mixed' CHECK (ac_type IN ('ac', 'mixed')),
+    address_ciphertext TEXT,
+    location_ciphertext TEXT,
+    owner_mobile_ciphertext TEXT,
     created_by TEXT NOT NULL REFERENCES staff(id),
     created_at TEXT NOT NULL
 );
@@ -77,14 +81,16 @@ CREATE TABLE IF NOT EXISTS floors (
     id TEXT PRIMARY KEY,
     hostel_id TEXT NOT NULL REFERENCES hostels(id) ON DELETE CASCADE,
     floor_number INTEGER NOT NULL CHECK (floor_number BETWEEN 1 AND 99),
-    created_at TEXT NOT NULL,
-    UNIQUE (hostel_id, floor_number)
+    floor_type TEXT NOT NULL DEFAULT 'standard' CHECK (floor_type IN ('basement', 'ground', 'standard', 'penthouse')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY,
     floor_id TEXT NOT NULL REFERENCES floors(id) ON DELETE CASCADE,
     room_number TEXT NOT NULL,
     share_count INTEGER NOT NULL CHECK (share_count BETWEEN 1 AND 20),
+    ac_type TEXT NOT NULL DEFAULT 'non_ac' CHECK (ac_type IN ('ac', 'non_ac')),
     monthly_rent_paise INTEGER NOT NULL DEFAULT 0 CHECK (monthly_rent_paise >= 0),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     created_at TEXT NOT NULL,
@@ -92,10 +98,11 @@ CREATE TABLE IF NOT EXISTS rooms (
 );
 CREATE TABLE IF NOT EXISTS room_type_charges (
     hostel_id TEXT NOT NULL REFERENCES hostels(id) ON DELETE CASCADE,
-    share_count INTEGER NOT NULL CHECK (share_count BETWEEN 1 AND 4),
+    share_count INTEGER NOT NULL CHECK (share_count BETWEEN 1 AND 20),
+    ac_type TEXT NOT NULL DEFAULT 'non_ac' CHECK (ac_type IN ('ac', 'non_ac')),
     monthly_rent_paise INTEGER NOT NULL CHECK (monthly_rent_paise >= 0),
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (hostel_id, share_count)
+    PRIMARY KEY (hostel_id, share_count, ac_type)
 );
 CREATE TABLE IF NOT EXISTS residents (
     id TEXT PRIMARY KEY,
@@ -108,12 +115,45 @@ CREATE TABLE IF NOT EXISTS residents (
     payment_due_date TEXT NOT NULL,
     payment_status TEXT NOT NULL CHECK (payment_status IN ('paid', 'unpaid')),
     amount_due_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_due_paise >= 0),
+    whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1)),
     created_by TEXT NOT NULL REFERENCES staff(id),
     created_at TEXT NOT NULL,
     checked_out_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS active_bed_assignment
 ON residents(room_id, bed_number) WHERE checked_out_at IS NULL;
+CREATE TABLE IF NOT EXISTS registration_invites (
+    id TEXT PRIMARY KEY,
+    hostel_id TEXT NOT NULL REFERENCES hostels(id),
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_by TEXT NOT NULL REFERENCES staff(id),
+    created_at TEXT NOT NULL,
+    used_at TEXT,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS registration_invite_hostel
+ON registration_invites(hostel_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS registration_applications (
+    id TEXT PRIMARY KEY,
+    invite_id TEXT NOT NULL UNIQUE REFERENCES registration_invites(id),
+    hostel_id TEXT NOT NULL REFERENCES hostels(id),
+    name_ciphertext TEXT NOT NULL,
+    mobile_ciphertext TEXT NOT NULL,
+    aadhaar_ciphertext TEXT,
+    whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1)),
+    person_photo_path TEXT,
+    person_photo_media_type TEXT,
+    aadhaar_photo_path TEXT,
+    aadhaar_photo_media_type TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved')),
+    submitted_at TEXT NOT NULL,
+    reviewed_at TEXT,
+    reviewed_by TEXT REFERENCES staff(id),
+    resident_id TEXT REFERENCES residents(id)
+);
+CREATE INDEX IF NOT EXISTS registration_application_hostel_status
+ON registration_applications(hostel_id, status, submitted_at DESC);
 CREATE TABLE IF NOT EXISTS bookings (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES staff(id),
@@ -179,6 +219,16 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 POSTGRES_SCHEMA = (
     SCHEMA.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
     .replace(" COLLATE NOCASE", "")
+    .replace(
+        "floor_type TEXT NOT NULL DEFAULT 'standard' CHECK "
+        "(floor_type IN ('basement', 'ground', 'standard', 'penthouse')),\n"
+        "    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),\n"
+        "    created_at TEXT NOT NULL\n);",
+        "floor_type TEXT NOT NULL DEFAULT 'standard' CHECK "
+        "(floor_type IN ('basement', 'ground', 'standard', 'penthouse')),\n"
+        "    active BOOLEAN NOT NULL DEFAULT TRUE,\n"
+        "    created_at TEXT NOT NULL\n);",
+    )
 )
 
 
@@ -307,11 +357,79 @@ def initialize_database() -> None:
             connection.execute(
                 "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS monthly_rent_paise INTEGER NOT NULL DEFAULT 0"
             )
-            for version in (1, 2, 3, 4, 5, 6, 7):
+            connection.execute(
+                "ALTER TABLE hostels ADD COLUMN IF NOT EXISTS ac_type TEXT NOT NULL DEFAULT 'mixed'"
+            )
+            connection.execute(
+                "ALTER TABLE floors ADD COLUMN IF NOT EXISTS floor_type TEXT NOT NULL DEFAULT 'standard'"
+            )
+            connection.execute("ALTER TABLE hostels ADD COLUMN IF NOT EXISTS address_ciphertext TEXT")
+            connection.execute("ALTER TABLE hostels ADD COLUMN IF NOT EXISTS location_ciphertext TEXT")
+            connection.execute("ALTER TABLE hostels ADD COLUMN IF NOT EXISTS owner_mobile_ciphertext TEXT")
+            connection.execute("ALTER TABLE floors ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE")
+            connection.execute("ALTER TABLE floors DROP CONSTRAINT IF EXISTS floors_hostel_id_floor_number_key")
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS active_floor_number "
+                "ON floors(hostel_id, floor_number) "
+                "WHERE CAST(active AS TEXT) IN ('1', 'true')"
+            )
+            migration_eleven = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 11"
+            ).fetchone()
+            if not migration_eleven:
+                connection.execute(
+                    "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS ac_type TEXT NOT NULL DEFAULT 'non_ac' "
+                    "CHECK (ac_type IN ('ac', 'non_ac'))"
+                )
+                connection.execute(
+                    "UPDATE rooms SET ac_type = 'ac' FROM floors floor JOIN hostels hostel "
+                    "ON hostel.id = floor.hostel_id WHERE rooms.floor_id = floor.id AND hostel.ac_type = 'ac'"
+                )
+                connection.execute(
+                    "ALTER TABLE room_type_charges ADD COLUMN IF NOT EXISTS ac_type TEXT NOT NULL DEFAULT 'non_ac' "
+                    "CHECK (ac_type IN ('ac', 'non_ac'))"
+                )
+                connection.execute(
+                    "UPDATE room_type_charges SET ac_type = 'ac' FROM hostels hostel "
+                    "WHERE hostel.id = room_type_charges.hostel_id AND hostel.ac_type = 'ac'"
+                )
+                connection.execute("ALTER TABLE room_type_charges DROP CONSTRAINT IF EXISTS room_type_charges_pkey")
+                connection.execute(
+                    "ALTER TABLE room_type_charges DROP CONSTRAINT IF EXISTS room_type_charges_share_count_check"
+                )
+                connection.execute(
+                    "ALTER TABLE room_type_charges ADD CONSTRAINT room_type_charges_share_count_check "
+                    "CHECK (share_count BETWEEN 1 AND 20)"
+                )
+                connection.execute(
+                    "ALTER TABLE room_type_charges ADD CONSTRAINT room_type_charges_pkey "
+                    "PRIMARY KEY (hostel_id, share_count, ac_type)"
+                )
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (11, ?) ON CONFLICT DO NOTHING",
+                    (now,),
+                )
+            for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?) ON CONFLICT DO NOTHING",
                     (version, now),
                 )
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (12, ?) ON CONFLICT DO NOTHING",
+                (now,),
+            )
+            connection.execute(
+                "ALTER TABLE residents ADD COLUMN IF NOT EXISTS whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 "
+                "CHECK (whatsapp_opt_in IN (0, 1))"
+            )
+            connection.execute(
+                "ALTER TABLE registration_applications ADD COLUMN IF NOT EXISTS whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 "
+                "CHECK (whatsapp_opt_in IN (0, 1))"
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (13, ?) ON CONFLICT DO NOTHING",
+                (now,),
+            )
         return
     with read_connection() as connection:
         existing_tables = {
@@ -476,6 +594,140 @@ def initialize_database() -> None:
                     connection.execute("ALTER TABLE platform_accounts ADD COLUMN recovery_email TEXT")
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (7, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_eight = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 8"
+            ).fetchone()
+            if not migration_eight:
+                hostel_columns = {row[1] for row in connection.execute("PRAGMA table_info(hostels)").fetchall()}
+                floor_columns = {row[1] for row in connection.execute("PRAGMA table_info(floors)").fetchall()}
+                if "ac_type" not in hostel_columns:
+                    connection.execute(
+                        "ALTER TABLE hostels ADD COLUMN ac_type TEXT NOT NULL DEFAULT 'mixed' "
+                        "CHECK (ac_type IN ('ac', 'mixed'))"
+                    )
+                if "floor_type" not in floor_columns:
+                    connection.execute(
+                        "ALTER TABLE floors ADD COLUMN floor_type TEXT NOT NULL DEFAULT 'standard' "
+                        "CHECK (floor_type IN ('basement', 'ground', 'standard', 'penthouse'))"
+                    )
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (8, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_nine = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 9"
+            ).fetchone()
+            if not migration_nine:
+                hostel_columns = {row[1] for row in connection.execute("PRAGMA table_info(hostels)").fetchall()}
+                for column in ("address_ciphertext", "location_ciphertext", "owner_mobile_ciphertext"):
+                    if column not in hostel_columns:
+                        connection.execute(f"ALTER TABLE hostels ADD COLUMN {column} TEXT")
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (9, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_ten = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 10"
+            ).fetchone()
+            if not migration_ten:
+                floor_columns = {row[1] for row in connection.execute("PRAGMA table_info(floors)").fetchall()}
+                if "active" not in floor_columns:
+                    connection.execute(
+                        "CREATE TABLE floors_new ("
+                        "id TEXT PRIMARY KEY, hostel_id TEXT NOT NULL REFERENCES hostels(id) ON DELETE CASCADE, "
+                        "floor_number INTEGER NOT NULL CHECK (floor_number BETWEEN 1 AND 99), "
+                        "floor_type TEXT NOT NULL DEFAULT 'standard' "
+                        "CHECK (floor_type IN ('basement', 'ground', 'standard', 'penthouse')), "
+                        "active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)), created_at TEXT NOT NULL)"
+                    )
+                    connection.execute(
+                        "INSERT INTO floors_new (id, hostel_id, floor_number, floor_type, active, created_at) "
+                        "SELECT id, hostel_id, floor_number, floor_type, 1, created_at FROM floors"
+                    )
+                    connection.execute("DROP TABLE floors")
+                    connection.execute("ALTER TABLE floors_new RENAME TO floors")
+                connection.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS active_floor_number ON floors(hostel_id, floor_number) "
+                    "WHERE CAST(active AS TEXT) IN ('1', 'true')"
+                )
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (10, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_eleven = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 11"
+            ).fetchone()
+            if not migration_eleven:
+                room_columns = {row[1] for row in connection.execute("PRAGMA table_info(rooms)").fetchall()}
+                if "ac_type" not in room_columns:
+                    connection.execute(
+                        "ALTER TABLE rooms ADD COLUMN ac_type TEXT NOT NULL DEFAULT 'non_ac' "
+                        "CHECK (ac_type IN ('ac', 'non_ac'))"
+                    )
+                connection.execute(
+                    "UPDATE rooms SET ac_type = 'ac' WHERE floor_id IN ("
+                    "SELECT floor.id FROM floors floor JOIN hostels hostel ON hostel.id = floor.hostel_id "
+                    "WHERE hostel.ac_type = 'ac')"
+                )
+                charge_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(room_type_charges)").fetchall()
+                }
+                if "ac_type" not in charge_columns:
+                    connection.execute("DROP TABLE IF EXISTS room_type_charges_new")
+                    connection.execute(
+                        "CREATE TABLE room_type_charges_new ("
+                        "hostel_id TEXT NOT NULL REFERENCES hostels(id) ON DELETE CASCADE, "
+                        "share_count INTEGER NOT NULL CHECK (share_count BETWEEN 1 AND 20), "
+                        "ac_type TEXT NOT NULL DEFAULT 'non_ac' CHECK (ac_type IN ('ac', 'non_ac')), "
+                        "monthly_rent_paise INTEGER NOT NULL CHECK (monthly_rent_paise >= 0), "
+                        "updated_at TEXT NOT NULL, PRIMARY KEY (hostel_id, share_count, ac_type))"
+                    )
+                    connection.execute(
+                        "INSERT INTO room_type_charges_new "
+                        "(hostel_id, share_count, ac_type, monthly_rent_paise, updated_at) "
+                        "SELECT charge.hostel_id, charge.share_count, "
+                        "CASE WHEN hostel.ac_type = 'ac' THEN 'ac' ELSE 'non_ac' END, "
+                        "charge.monthly_rent_paise, charge.updated_at "
+                        "FROM room_type_charges charge JOIN hostels hostel ON hostel.id = charge.hostel_id"
+                    )
+                    connection.execute("DROP TABLE room_type_charges")
+                    connection.execute("ALTER TABLE room_type_charges_new RENAME TO room_type_charges")
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (11, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_twelve = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 12"
+            ).fetchone()
+            if not migration_twelve:
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (12, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_thirteen = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 13"
+            ).fetchone()
+            if not migration_thirteen:
+                resident_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(residents)").fetchall()
+                }
+                application_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(registration_applications)").fetchall()
+                }
+                if "whatsapp_opt_in" not in resident_columns:
+                    connection.execute(
+                        "ALTER TABLE residents ADD COLUMN whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 "
+                        "CHECK (whatsapp_opt_in IN (0, 1))"
+                    )
+                if "whatsapp_opt_in" not in application_columns:
+                    connection.execute(
+                        "ALTER TABLE registration_applications ADD COLUMN whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 "
+                        "CHECK (whatsapp_opt_in IN (0, 1))"
+                    )
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (13, ?)",
                     (datetime.now(timezone.utc).isoformat(),),
                 )
             connection.commit()

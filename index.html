@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f4ef">
-  <title>Haven Hostel | Resident desk</title>
+  <title>Haven Hostel | Hostel management</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -51,31 +51,16 @@
     .landing-section-head .eyebrow { margin: 0 0 9px; color: var(--green); font-size: 10px; font-weight: 700; text-transform: uppercase; }
     .landing-section h2 { margin: 0; color: #24332a; font: 600 30px/1.2 var(--serif); }
     .landing-section-head p { margin: 10px 0 0; color: #68736b; font-size: 12px; line-height: 1.7; }
-    .service-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid #dfe5dd; border-bottom: 1px solid #dfe5dd; }
+    .service-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid #dfe5dd; border-bottom: 1px solid #dfe5dd; }
     .service-item { min-height: 160px; padding: 22px 20px 22px 0; animation: content-arrive .4s cubic-bezier(.2,.7,.2,1) both; }
     .service-item:nth-child(2), .owner-benefit:nth-child(2) { animation-delay: 45ms; }
     .service-item:nth-child(3), .owner-benefit:nth-child(3) { animation-delay: 90ms; }
     .service-item:nth-child(4), .owner-benefit:nth-child(4) { animation-delay: 135ms; }
     .service-item + .service-item { padding-left: 20px; border-left: 1px solid #dfe5dd; }
+    .service-item:nth-child(n+4) { border-top: 1px solid #dfe5dd; }
     .service-index { color: #8d9b8f; font-size: 10px; font-weight: 700; }
     .service-item h3 { margin: 17px 0 7px; color: #273b2f; font: 700 13px var(--display); }
     .service-item p { max-width: 230px; margin: 0; color: #69756d; font-size: 11px; line-height: 1.6; }
-    .owner-benefits { padding: 54px clamp(20px, 8vw, 120px); background: #eaf0e9; }
-    .owner-benefits-head { max-width: 620px; margin-bottom: 25px; }
-    .owner-benefits-head .eyebrow { margin: 0 0 9px; color: var(--green); font-size: 10px; font-weight: 700; text-transform: uppercase; }
-    .owner-benefits-head h2 { margin: 0; color: #24332a; font: 600 29px/1.2 var(--serif); }
-    .owner-benefits-head p { margin: 9px 0 0; color: #68736b; font-size: 12px; line-height: 1.7; }
-    .owner-benefit-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #cbd8cc; border-bottom: 1px solid #cbd8cc; }
-    .owner-benefits-head { animation: content-arrive .4s cubic-bezier(.2,.7,.2,1) both; }
-    .owner-benefit { min-height: 145px; padding: 18px 18px 18px 0; animation: content-arrive .4s cubic-bezier(.2,.7,.2,1) both; }
-    .owner-benefit + .owner-benefit { padding-left: 18px; border-left: 1px solid #cbd8cc; }
-    .owner-benefit-index { color: #708477; font-size: 10px; font-weight: 700; }
-    .owner-benefit h3 { margin: 16px 0 7px; color: #273b2f; font: 700 13px var(--display); }
-    .owner-benefit p { max-width: 225px; margin: 0; color: #69756d; font-size: 11px; line-height: 1.6; }
-    .landing-owner-band { padding: 32px clamp(20px, 8vw, 120px); display: flex; align-items: center; justify-content: space-between; gap: 25px; color: white; background: #263d30; }
-    .landing-owner-band > * { animation: content-arrive .4s cubic-bezier(.2,.7,.2,1) both; }
-    .landing-owner-band h2 { margin: 0; color: white; font: 600 22px var(--serif); }
-    .landing-owner-band p { max-width: 540px; margin: 7px 0 0; color: #d4e1d7; font-size: 11px; line-height: 1.6; }
     .landing-footer { padding: 20px clamp(20px, 8vw, 120px); display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #748078; background: #f7f8f4; font-size: 10px; }
     .portal-back { margin: 16px 0 0; padding: 0; border: 0; color: var(--green); background: none; font-size: 11px; font-weight: 700; }
     .platform-app { min-height: 100vh; background: var(--paper); }
@@ -85,7 +70,7 @@
     .platform-badge { padding: 5px 8px; border-radius: 4px; color: #31563e; background: #e8f0e9; font-size: 9px; font-weight: 700; }
     .platform-main { max-width: 1440px; margin: 0 auto; padding: 34px clamp(17px, 4vw, 50px) 50px; }
     .platform-main .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .owner-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .owner-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .platform-columns { display: grid; grid-template-columns: minmax(270px, .72fr) minmax(0, 1.5fr); gap: 16px; align-items: start; }
     .platform-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 22px; padding: 0; list-style: none; }
     .platform-step-button { width: 100%; min-height: 48px; padding: 9px 12px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: #fbfbf8; text-align: left; font-size: 11px; font-weight: 700; transition: background .2s, border-color .2s, transform .2s; }
@@ -96,15 +81,92 @@
     .platform-step-panel[hidden] { display: none; }
     .platform-step-panel:not([hidden]) { animation: view-arrive .32s cubic-bezier(.2,.7,.2,1) both; }
     .platform-step-panel > .section { margin-bottom: 16px; }
-    .platform-step-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+    .platform-step-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
+    .platform-step-actions .secondary-button { min-height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 5px; color: #405047; background: white; font-size: 11px; font-weight: 700; }
     .platform-form-body { padding: 16px; display: grid; gap: 12px; }
     .platform-form-body input, .platform-layout-select { width: 100%; height: 38px; padding: 0 9px; border: 1px solid #dfe2da; border-radius: 5px; background: white; font-size: 11px; }
+    .field-help-inline { color: var(--muted); font-size: 10px; font-weight: 500; }
+    .hostel-details { max-width: 720px; margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
     .platform-client-list { overflow-x: auto; }
     .platform-client-list table { min-width: 620px; }
     .platform-client-list td { vertical-align: middle; }
     .platform-layout-select { max-width: 320px; }
+    @media (max-width: 650px) {
+      .platform-client-list { overflow: visible; }
+      .platform-client-list table,
+      .platform-client-list thead,
+      .platform-client-list tbody,
+      .platform-client-list tr,
+      .platform-client-list th,
+      .platform-client-list td {
+        display: block;
+        width: 100%;
+      }
+      .platform-client-list thead { display: none; }
+      .platform-client-list tbody { display: grid; gap: 10px; }
+      .platform-client-list tr {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+      .platform-client-list th,
+      .platform-client-list td {
+        padding: 7px 0;
+        border: 0;
+      }
+      .platform-client-list td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 11px;
+      }
+      .platform-client-list td::before {
+        content: attr(data-label);
+        color: var(--muted);
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+      .platform-client-list td:first-child { padding-top: 0; }
+      .platform-client-list td:last-child { padding-bottom: 0; }
+    }
     .platform-layout-tools { padding: 15px 18px 0; }
     .platform-layout-tools .section-subtitle { max-width: 560px; line-height: 1.6; }
+    .layout-wizard { padding: 16px 18px 20px; }
+    .layout-wizard-steps { margin: 0 0 22px; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; list-style: none; }
+    .layout-wizard-step { min-width: 0; min-height: 42px; padding: 7px 9px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: #fbfbf8; font-size: 10px; font-weight: 700; }
+    .layout-wizard-step > span { width: 21px; height: 21px; flex: 0 0 21px; display: grid; place-items: center; border-radius: 50%; background: #e8ebe5; font-size: 10px; }
+    .layout-wizard-step.active { border-color: #557561; color: #254432; background: #edf3ed; }
+    .layout-wizard-step.active > span, .layout-wizard-step.complete > span { color: white; background: #31563e; }
+    .layout-wizard-panel { max-width: 680px; animation: wizard-step-arrive .46s cubic-bezier(.2,.75,.25,1) both; }
+    @keyframes wizard-step-arrive { from { opacity: 0; transform: translateX(18px) scale(.985); filter: blur(3px); } to { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); } }
+    .layout-wizard-panel h3 { margin: 0 0 17px; color: #273b2f; font: 700 16px var(--display); }
+    .layout-wizard-form { display: grid; gap: 17px; }
+    .layout-choice-group { min-width: 0; margin: 0; padding: 0; border: 0; }
+    .layout-choice-group legend { margin-bottom: 10px; font-size: 11px; font-weight: 700; }
+    .floor-type-grid, .ac-choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .floor-choice, .ac-choice { min-width: 0; min-height: 44px; padding: 10px 12px; display: flex; align-items: center; gap: 9px; border: 1px solid #dfe2da; border-radius: 5px; color: #35443a; background: white; font-size: 11px; font-weight: 600; cursor: pointer; transition: transform .24s cubic-bezier(.2,.75,.25,1), border-color .24s, box-shadow .24s, background .24s; }
+    .floor-choice:hover, .ac-choice:hover { transform: translateY(-2px); box-shadow: 0 7px 18px #263d3015; }
+    .floor-choice:has(input:checked), .ac-choice:has(input:checked) { border-color: #557561; background: #edf3ed; }
+    .floor-choice input, .ac-choice input { width: 15px; height: 15px; margin: 0; accent-color: var(--green); }
+    .layout-step-fields { display: grid; grid-template-columns: minmax(150px, .65fr) minmax(0, 1.35fr); align-items: end; gap: 18px; }
+    .layout-step-fields .field label, .layout-wizard-form > .field label { display: block; margin-bottom: 7px; font-size: 11px; font-weight: 700; }
+    .layout-wizard-form input:not([type="checkbox"]):not([type="radio"]), .layout-wizard-form select { width: 100%; height: 40px; padding: 0 10px; border: 1px solid #dfe2da; border-radius: 5px; background: white; font-size: 12px; }
+    .floor-count-stepper { display: grid; grid-template-columns: 40px minmax(60px, 1fr) 40px; gap: 5px; }
+    .floor-count-stepper button { height: 40px; border: 1px solid #dfe2da; border-radius: 5px; color: #254432; background: white; font-size: 18px; font-weight: 600; }
+    .floor-count-stepper input { text-align: center; }
+    .ac-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .room-draft-wrap { margin-top: 18px; }
+    .room-draft-list { margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
+    .room-draft-list li { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); color: #35443a; font-size: 11px; }
+    .room-draft-list button { border: 0; color: #8e4736; background: transparent; font-size: 10px; font-weight: 700; }
+    .layout-wizard-actions { display: flex; justify-content: space-between; gap: 9px; margin-top: 3px; }
+    .layout-wizard-actions .secondary-button, .layout-wizard-form > .secondary-button { min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 5px; color: #405047; background: white; font-size: 11px; font-weight: 700; }
+    .layout-wizard-actions .primary-button { min-height: 40px; }
+    .layout-wizard-actions button:disabled { cursor: not-allowed; opacity: .5; }
     button, input, select { font: inherit; }
     button { cursor: pointer; }
     .app { min-height: 100vh; display: grid; grid-template-columns: 232px minmax(0, 1fr); }
@@ -138,6 +200,12 @@
     .nav-button:hover { background: #f0f1eb; }
     .nav-button.active { background: var(--mint); color: var(--green-dark); }
     .nav-button svg { width: 18px; height: 18px; flex: 0 0 auto; }
+    .nav-tools { margin-top: 3px; }
+    .nav-tools-summary { padding: 11px; border-radius: 7px; color: #747a74; font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
+    .nav-tools-summary::-webkit-details-marker { display: none; }
+    .nav-tools-summary::after { content: '+'; float: right; color: var(--muted); }
+    .nav-tools[open] .nav-tools-summary::after { content: '−'; }
+    .nav-tools .nav-button { margin-top: 3px; }
     .side-note { margin-top: auto; border-top: 1px solid var(--line); padding: 17px 8px 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
     .side-note strong { display: block; color: var(--ink); font-size: 12px; }
     main { min-width: 0; padding: 30px clamp(20px, 4vw, 56px) 48px; }
@@ -170,6 +238,11 @@
     .content-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, .8fr); align-items: start; gap: 20px; }
     .section { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
     .section-head { min-height: 66px; padding: 16px 19px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+    .broadcast-status { padding: 14px 14px 0; line-height: 1.5; }
+    .page-view > .section + .section,
+    .page-view > .section + details.section,
+    .page-view > details.section + .section,
+    .page-view > details.section + details.section { margin-top: 12px; }
     .section-title { margin: 0; font: 700 14px var(--display); }
     .section-subtitle { margin-top: 4px; color: var(--muted); font-size: 10px; }
     .text-button { border: 0; background: none; color: var(--green); font-size: 11px; font-weight: 700; }
@@ -221,6 +294,10 @@
     .document-link { color: var(--green); font-weight: 600; }
     .whatsapp-button, .mark-paid-button { padding: 5px 8px; border: 1px solid #d8e6da; border-radius: 4px; color: var(--green-dark); background: #f2f7f2; font-size: 10px; font-weight: 700; }
     .whatsapp-button:hover, .mark-paid-button:hover { background: #e5f0e6; }
+    .consent-toggle { margin-top: 5px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--green-dark); background: white; font-size: 10px; font-weight: 600; }
+    .broadcast-message { width: min(100%, 720px); min-height: 100px; padding: 10px; resize: vertical; border: 1px solid #dfe2da; border-radius: 5px; font: inherit; }
+    .registration-tools .broadcast-field { width: min(720px, 100%); flex: 1 1 420px; }
+    .broadcast-actions { width: 100%; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
     .mark-paid-button { border-color: var(--line); color: #626960; background: white; }
     .page-view[hidden] { display: none; }
     .page-view:not([hidden]) { animation: view-arrive .32s cubic-bezier(.2,.7,.2,1) both; }
@@ -232,48 +309,122 @@
     .room-charge-form:last-child { border-bottom: 0; }
     .room-charge-form-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .room-charge-form-title { margin: 0; font: 700 12px var(--display); }
-    .room-charge-fields { margin-top: 12px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .room-charge-fields { margin-top: 12px; display: grid; gap: 7px; }
+    .room-charge-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfa; }
+    .room-charge-row > strong { color: var(--ink); font-size: 11px; }
+    .room-charge-variants { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .room-charge-field label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 600; }
     .room-charge-field input { width: 100%; height: 36px; padding: 0 9px; border: 1px solid #dfe2da; border-radius: 5px; font-size: 11px; }
     .room-charge-form .primary-button { min-height: 36px; padding: 0 12px; }
-    .structure-form { display: flex; align-items: end; flex-wrap: wrap; gap: 9px; }
+    .room-charge-add-controls { margin-top: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .room-charge-add-controls label { color: #405047; font-size: 11px; font-weight: 700; }
+    .room-charge-add-controls select { width: min(220px, 100%); height: 36px; padding: 0 9px; border: 1px solid #dfe2da; border-radius: 5px; background: white; font-size: 11px; }
+    .room-charge-add { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 5px; color: var(--green-dark); background: white; font-size: 11px; font-weight: 700; }
+    .room-charge-add:hover { background: #f2f7f2; }
+    .room-charge-add:disabled { cursor: not-allowed; opacity: .55; }
+    .structure-form {
+      display: flex;
+      align-items: end;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 12px 4px;
+      border: 1px solid rgba(46, 96, 74, 0.08);
+      border-radius: 12px;
+      background: rgba(242,247,244,0.7);
+    }
     .structure-form .field { min-width: 120px; }
     .structure-form .field.room-number-field { min-width: 96px; }
     .structure-form .field.share-field { min-width: 115px; }
-    .structure-form .field.rent-field { min-width: 115px; }
-    .structure-form input { height: 36px; padding: 0 9px; border: 1px solid #dfe2da; border-radius: 5px; font-size: 11px; }
-    .structure-form button { min-height: 36px; padding: 0 12px; }
+    .structure-form .field.room-ac-type-field { min-width: 120px; }
+    .structure-form input,
+    .structure-form select {
+      height: 38px;
+      padding: 0 10px;
+      border: 1px solid rgba(41, 62, 52, 0.12);
+      border-radius: 9px;
+      font-size: 11px;
+      background: rgba(255,255,255,0.9);
+    }
+    .structure-form button { min-height: 38px; padding: 0 14px; border-radius: 9px; }
+    .room-type-static { min-height: 38px; padding: 10px; border: 1px solid rgba(41, 62, 52, 0.12); border-radius: 9px; color: var(--green-dark); background: rgba(255,255,255,0.9); font-size: 11px; font-weight: 700; }
+    .room-rate-review-list { display: grid; gap: 8px; }
+    .room-rate-review { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .room-rate-review strong, .room-rate-review b { font-size: 11px; }
+    .room-rate-review span { color: var(--muted); font-size: 10px; }
     .hostel-structure { padding: 16px 18px; }
-    .hostel-card { border: 1px solid var(--line); border-radius: 7px; background: #fff; }
-    .hostel-card + .hostel-card { margin-top: 14px; }
-    .hostel-card-head { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+    .hostel-card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(42, 78, 62, 0.12);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(245,248,245,0.96));
+      box-shadow: 0 12px 28px rgba(22, 38, 31, 0.06);
+    }
+    .hostel-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 100%;
+      height: 95px;
+      background: radial-gradient(circle at top left, rgba(38, 94, 70, 0.14), transparent 54%);
+      pointer-events: none;
+    }
+    .hostel-card + .hostel-card { margin-top: 18px; }
+    .hostel-card-head { position: relative; z-index: 1; padding: 18px 18px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(34, 52, 43, 0.08); }
     .hostel-head-actions { display: flex; align-items: center; justify-content: end; flex-wrap: wrap; gap: 9px; }
-    .hostel-card-title { margin: 0; font: 700 15px var(--display); }
-    .hostel-card-meta { margin-top: 4px; color: var(--muted); font-size: 10px; }
-    .floor-group { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .hostel-card-title { margin: 0; font: 700 16px var(--display); }
+    .hostel-card-meta { margin-top: 5px; color: var(--muted); font-size: 10px; }
+    .floor-group { position: relative; z-index: 1; padding: 16px 18px 18px; border-bottom: 1px solid rgba(34, 52, 43, 0.08); animation: floor-arrive .44s cubic-bezier(.2,.75,.25,1) both; }
+    .floor-group:nth-of-type(2) { animation-delay: 70ms; }
+    .floor-group:nth-of-type(3) { animation-delay: 140ms; }
+    .floor-group:nth-of-type(4) { animation-delay: 210ms; }
+    @keyframes floor-arrive { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: translateY(0); } }
     .floor-group:last-child { border-bottom: 0; }
-    .floor-head { margin-bottom: 11px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .floor-head { margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .floor-title { margin: 0; font: 700 12px var(--display); }
-    .room-structure-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 9px; }
-    .room-structure-tile { padding: 11px; border: 1px solid var(--line); border-radius: 5px; animation: content-arrive .34s cubic-bezier(.2,.7,.2,1) both; }
+    .room-structure-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 11px; }
+    .room-structure-tile {
+      padding: 13px 12px 11px;
+      border: 1px solid rgba(34, 52, 43, 0.12);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,247,244,0.97));
+      box-shadow: 0 8px 18px rgba(19, 33, 28, 0.04);
+      animation: content-arrive .48s cubic-bezier(.2,.7,.2,1) both;
+      transition: border-color .25s, box-shadow .25s, transform .25s;
+    }
+    .room-structure-tile:hover { transform: translateY(-2px); border-color: rgba(46, 96, 74, 0.35); box-shadow: 0 16px 28px rgba(24, 41, 32, 0.08); }
     .room-structure-grid > :nth-child(2) { animation-delay: 35ms; }
     .room-structure-grid > :nth-child(3) { animation-delay: 70ms; }
     .room-structure-grid > :nth-child(4) { animation-delay: 105ms; }
     .room-structure-grid > :nth-child(5) { animation-delay: 140ms; }
     @keyframes content-arrive { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
-    .room-structure-tile.reserved { border-color: #e8c968; background: #fffaf0; }
+    .room-structure-tile.reserved { border-color: rgba(185, 140, 36, 0.28); background: linear-gradient(180deg, rgba(255,250,240,1), rgba(255,247,227,0.96)); }
     .room-structure-tile .room-tile-top { margin-bottom: 9px; }
     .room-structure-tile .beds { flex-wrap: wrap; }
     .room-structure-tile .bed { width: 28px; height: 29px; }
     .room-structure-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
-    .delete-room-button { min-height: 30px; padding: 0 8px; border: 1px solid #ead6ce; border-radius: 4px; color: #a35137; background: white; font-size: 10px; font-weight: 600; }
+    .delete-room-button { min-height: 30px; padding: 0 8px; border: 1px solid #ead6ce; border-radius: 8px; color: #a35137; background: rgba(255,255,255,0.7); font-size: 10px; font-weight: 600; }
     .delete-room-button:hover:not(:disabled) { background: var(--orange-light); }
     .delete-room-button:disabled { cursor: not-allowed; opacity: .55; }
     .room-pill.reserved { color: #7b5a08; background: #fff0b9; }
     .bed.reserved { border-color: #e2c35c; color: #76570d; background: #fff1bd; }
     .rent-form { margin-top: 10px; display: flex; align-items: center; gap: 6px; }
-    .rent-form input { width: 96px; height: 30px; padding: 0 7px; border: 1px solid var(--line); border-radius: 4px; font-size: 10px; }
-    .rent-form button { min-height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--green-dark); background: white; font-size: 10px; font-weight: 700; }
+    .rent-form input { width: 96px; height: 30px; padding: 0 7px; border: 1px solid var(--line); border-radius: 8px; font-size: 10px; }
+    .rent-form button { min-height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--green-dark); background: white; font-size: 10px; font-weight: 700; }
+    .layout-empty-state {
+      display: grid;
+      gap: 14px;
+      padding: 22px 18px;
+      border: 1px dashed rgba(46, 96, 74, 0.3);
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(233,244,237,0.75), rgba(255,255,255,0.9));
+      text-align: center;
+      color: var(--green-dark);
+    }
+    .layout-empty-state .primary-button {
+      justify-self: center;
+      min-width: min(100%, 250px);
+    }
     .booking-list { padding: 14px; display: grid; gap: 9px; }
     .booking-card { padding: 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 15px; border: 1px solid var(--line); border-left: 3px solid #d9ad31; border-radius: 6px; background: #fffdfa; }
     .booking-card-new { animation: slide-in .36s cubic-bezier(.2,.7,.2,1) both; }
@@ -281,6 +432,18 @@
     .booking-name { font: 700 13px var(--display); }
     .booking-meta { margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.55; }
     .booking-actions { display: flex; align-items: center; gap: 6px; }
+    .registration-tools, .registration-link-row { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 14px; }
+    .registration-tools .field { width: min(320px, 100%); }
+    .registration-link-row { align-items: center; border-top: 1px solid var(--line); }
+    .registration-link-row input { min-width: min(320px, 100%); flex: 1; }
+    .registration-list { padding: 14px; display: grid; gap: 10px; }
+    .registration-card { padding: 15px; border: 1px solid var(--line); border-radius: 6px; background: #fffdfa; }
+    .registration-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .registration-card-title { margin: 0; font-size: 14px; }
+    .registration-card-meta { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .registration-approval-grid { margin-top: 13px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .registration-actions { margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px; }
+    .registration-status { color: var(--muted); font-size: 11px; }
     .booking-confirm, .booking-cancel { min-height: 32px; padding: 0 10px; border: 1px solid #d7e5d9; border-radius: 4px; color: var(--green-dark); background: #f1f7f1; font-size: 10px; font-weight: 700; }
     .booking-cancel { border-color: #ead6ce; color: #a35137; background: white; }
     .qr-controls { padding: 16px; display: flex; flex-wrap: wrap; align-items: end; gap: 10px; border-bottom: 1px solid var(--line); }
@@ -335,8 +498,12 @@
       .activity-column + .activity-column { border-top: 1px solid var(--line); border-left: 0; }
       .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .platform-main .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .owner-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .platform-columns { grid-template-columns: 1fr; }
+      .layout-wizard { padding: 14px; }
+      .layout-wizard-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+      .layout-wizard-step { font-size: 10px; }
+      .floor-type-grid { grid-template-columns: 1fr; }
+      .layout-step-fields { grid-template-columns: 1fr; gap: 14px; }
     }
     @media (max-width: 650px) {
       .landing-nav { min-height: 62px; }
@@ -350,15 +517,8 @@
       .service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .service-item { min-height: 145px; padding: 18px 13px 18px 0; }
       .service-item + .service-item { padding-left: 13px; }
-      .service-item:nth-child(3) { padding-left: 0; border-left: 0; border-top: 1px solid #dfe5dd; }
-      .service-item:nth-child(4) { border-top: 1px solid #dfe5dd; }
-      .owner-benefits { padding: 42px 20px; }
-      .owner-benefit-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .owner-benefit { min-height: 140px; padding: 17px 12px 17px 0; }
-      .owner-benefit + .owner-benefit { padding-left: 12px; }
-      .owner-benefit:nth-child(3) { padding-left: 0; border-left: 0; border-top: 1px solid #cbd8cc; }
-      .owner-benefit:nth-child(4) { border-top: 1px solid #cbd8cc; }
-      .landing-owner-band { align-items: flex-start; flex-direction: column; padding: 28px 20px; }
+      .service-item:nth-child(3), .service-item:nth-child(5) { padding-left: 0; border-left: 0; border-top: 1px solid #dfe5dd; }
+      .service-item:nth-child(4), .service-item:nth-child(6) { border-top: 1px solid #dfe5dd; }
       .landing-footer { align-items: flex-start; flex-direction: column; padding: 18px 20px; }
       .app { display: block; }
       .login-panel { padding: 24px; }
@@ -366,9 +526,17 @@
       .brand { margin: 0; padding: 0 3px; }
       .brand-mark { width: 31px; height: 31px; }
       .nav-label, .side-note { display: none; }
-      .nav { display: flex; gap: 1px; }
-      .nav-button { width: 38px; height: 38px; justify-content: center; padding: 0; }
-      .nav-button .nav-text { display: none; }
+      .nav { min-width: 0; flex: 1 1 auto; display: flex; gap: 3px; overflow-x: auto; scrollbar-width: thin; }
+      .nav-button { width: auto; min-width: max-content; height: 38px; flex: 0 0 auto; justify-content: center; gap: 6px; padding: 0 9px; white-space: nowrap; font-size: 11px; }
+      .nav-button .nav-text { display: inline; }
+      .nav-tools { position: relative; }
+      .nav-tools-summary { width: auto; min-width: 54px; height: 38px; padding: 0 9px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+      .nav-tools-summary::before { content: none; }
+      .nav-tools-summary::after { content: none; }
+      .nav-tools[open] { position: absolute; top: 54px; right: 12px; z-index: 8; width: 180px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: 0 8px 24px #16281d20; }
+      .nav-tools[open] .nav-tools-summary { width: auto; min-width: 0; height: 32px; display: flex; justify-content: flex-start; color: var(--muted); font-size: 11px; }
+      .nav-tools[open] .nav-button { width: 100%; height: 36px; justify-content: flex-start; }
+      .nav-tools[open] .nav-button .nav-text { display: inline; }
       main { padding: 20px 15px 34px; }
       .topbar { margin-bottom: 25px; }
       .heading-row { align-items: start; }
@@ -379,15 +547,18 @@
       .privacy-chip { font-size: 0; }
       .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
       .platform-main .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .owner-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .stat { padding: 15px; }
       .stat-value { font-size: 24px; }
+      .owner-stats .stat:last-child { grid-column: 1 / -1; }
       .section-head { padding: 14px; }
       .hostel-card-head { align-items: start; flex-direction: column; }
       .hostel-head-actions { width: 100%; justify-content: start; }
       .room-list { padding: 0 13px; }
       .room-row { grid-template-columns: minmax(100px, 1fr) minmax(0, 1.6fr) 56px; gap: 8px; }
-      .room-charge-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .room-charge-row { grid-template-columns: 75px minmax(0, 1fr); gap: 7px; padding: 7px; }
+      .room-charge-variants { gap: 7px; }
+      .room-rate-review { grid-template-columns: minmax(0, 1fr) auto; }
+      .room-rate-review span { grid-column: 1 / -1; grid-row: 2; }
       .room-charge-form-head { align-items: flex-start; flex-direction: column; }
       .bed { width: 29px; height: 30px; }
       .activity-list { display: block; padding-right: 14px; padding-left: 14px; }
@@ -413,6 +584,7 @@
       .form-footer-note { max-width: 110px; line-height: 1.4; }
       .booking-card { grid-template-columns: 1fr; }
       .booking-actions { justify-content: end; }
+      .registration-approval-grid { grid-template-columns: 1fr 1fr; }
       .qr-stage { padding: 14px; }
       .qr-card { padding: 21px 15px; }
     }
@@ -430,9 +602,9 @@
 <body>
   <section class="landing-site" id="landing-screen" aria-labelledby="landing-title">
     <header class="landing-nav">
-      <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Hostel operations platform</div></div></div>
-      <nav class="landing-nav-links" aria-label="Landing page"><a href="#services">Services</a><a href="#for-owners">For hostel owners</a></nav>
-      <div class="landing-actions"><button class="landing-link" type="button" data-open-portal="developer">Employer</button><button class="landing-link primary" type="button" data-open-portal="owner">Owner</button></div>
+      <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Hostel management</div></div></div>
+      <nav class="landing-nav-links" aria-label="Landing page"><a href="#services">Features</a></nav>
+      <div class="landing-actions"><button class="landing-link" type="button" data-open-portal="developer">Platform sign in</button><button class="landing-link primary" type="button" data-open-portal="owner">Owner sign in</button></div>
     </header>
     <section class="landing-hero">
       <div class="landing-hero-content">
@@ -443,30 +615,22 @@
       </div>
     </section>
     <section class="landing-section" id="services" aria-labelledby="services-title">
-      <div class="landing-section-head"><p class="eyebrow">One dependable workspace</p><h2 id="services-title">Less chasing. More control.</h2><p>Practical tools for the day-to-day work of running a hostel, built around the rooms and people you manage.</p></div>
+      <div class="landing-section-head"><p class="eyebrow">Hostel workspace</p><h2 id="services-title">Tools for the day-to-day work.</h2><p>Use the owner workspace to manage rooms, resident registration, payments, and guest enquiries.</p></div>
       <div class="service-grid">
-        <article class="service-item"><span class="service-index">01 / ROOMS</span><h3>Room and bed layout</h3><p>Organize hostels by floor and track occupancy across every room and bed.</p></article>
-        <article class="service-item"><span class="service-index">02 / RESIDENTS</span><h3>Resident stays</h3><p>Record check-ins, room assignments, documents, and check-outs in one place.</p></article>
-        <article class="service-item"><span class="service-index">03 / PAYMENTS</span><h3>Payment visibility</h3><p>See paid balances, upcoming dates, and outstanding resident payments at a glance.</p></article>
-        <article class="service-item"><span class="service-index">04 / ENQUIRIES</span><h3>WhatsApp vacancy</h3><p>Share live room availability through WhatsApp and hostel-specific gate QR codes.</p></article>
+        <article class="service-item"><span class="service-index">ROOMS</span><h3>Rooms and pricing</h3><p>Set up floors and beds, check availability, and manage room rates.</p></article>
+        <article class="service-item"><span class="service-index">RESIDENTS</span><h3>Resident registration</h3><p>Add residents directly or share a registration link. Review applications and assign a bed.</p></article>
+        <article class="service-item"><span class="service-index">PAYMENTS</span><h3>Rent and balances</h3><p>Record payments, track outstanding balances, and prepare WhatsApp reminders.</p></article>
+        <article class="service-item"><span class="service-index">VISIT REQUESTS</span><h3>Guest enquiries</h3><p>Review and confirm visit requests from people asking about vacancies.</p></article>
+        <article class="service-item"><span class="service-index">ANNOUNCEMENTS</span><h3>WhatsApp messages</h3><p>Send announcements to residents who have agreed to receive them.</p></article>
+        <article class="service-item"><span class="service-index">VACANCIES</span><h3>Vacancy QR code</h3><p>Create a QR code that lets visitors ask about vacancies on WhatsApp.</p></article>
       </div>
     </section>
-    <section class="owner-benefits" aria-labelledby="owner-benefits-title">
-      <div class="owner-benefits-head"><p class="eyebrow">For hostel owners</p><h2 id="owner-benefits-title">Know what needs attention, sooner.</h2><p>See the essentials together, then act on the resident or room that needs you.</p></div>
-      <div class="owner-benefit-list">
-        <article class="owner-benefit"><span class="owner-benefit-index">01 / OCCUPANCY</span><h3>See every available bed</h3><p>Check room capacity and current assignments before placing a resident.</p></article>
-        <article class="owner-benefit"><span class="owner-benefit-index">02 / PAYMENTS</span><h3>Spot pending balances</h3><p>Review paid and unpaid resident records without searching across rooms.</p></article>
-        <article class="owner-benefit"><span class="owner-benefit-index">03 / RESIDENTS</span><h3>Close stays cleanly</h3><p>Check out a resident to free their bed while keeping stay history.</p></article>
-        <article class="owner-benefit"><span class="owner-benefit-index">04 / ENQUIRIES</span><h3>Answer availability faster</h3><p>Share current vacancies and visit booking options through WhatsApp.</p></article>
-      </div>
-    </section>
-    <section class="landing-owner-band" id="for-owners"><div><h2>Your hostel, ready for every new arrival.</h2><p>Manage residents, vacancies, and payments from one clear dashboard. AI Bookings turns WhatsApp enquiries into scheduled visits and room reservations.</p></div><button class="landing-link primary" type="button" data-open-portal="owner">Sign in as an owner</button></section>
-    <footer class="landing-footer"><span>Haven Hostel · Hostel operations, made clearer.</span><button class="portal-back" type="button" data-open-portal="developer">Employer sign in</button></footer>
+    <footer class="landing-footer"><span>Haven Hostel · Hostel operations</span><button class="portal-back" type="button" data-open-portal="developer">Platform sign in</button></footer>
   </section>
 
   <section class="login-screen" id="login-screen" aria-labelledby="login-title" hidden>
     <div class="login-panel">
-      <div class="login-brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Resident desk</div></div></div>
+      <div class="login-brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Hostel workspace</div></div></div>
       <p class="login-kicker">Staff access</p>
       <h1 id="login-title">Welcome back.</h1>
       <p class="login-copy">Sign in to manage residents, rooms, and payments.</p>
@@ -476,7 +640,7 @@
         <p class="login-error" id="login-error" role="alert" hidden></p>
         <button class="primary-button login-submit" type="submit">Sign in</button>
       </form>
-      <p class="credentials-note" id="credentials-note" hidden>Your owner or developer will provide your sign-in details. Contact them if you need an account.</p>
+      <p class="credentials-note" id="credentials-note" hidden>Ask your hostel administrator for sign-in details.</p>
       <form id="signup-form" hidden>
         <div class="login-field"><label for="signup-username">Admin username</label><input id="signup-username" name="username" autocomplete="username" pattern="[A-Za-z0-9._\-]{3,40}" required minlength="3" maxlength="40"></div>
         <div class="login-field"><label for="signup-password">Password</label><input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="200" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,200}" title="Use at least 8 characters with uppercase, lowercase, a number, and a special character."><div class="field-help">At least 8 characters, with uppercase, lowercase, a number, and a special character.</div></div>
@@ -491,8 +655,8 @@
 
   <section class="login-screen" id="developer-login-screen" aria-labelledby="developer-login-title" hidden>
     <div class="login-panel">
-      <div class="login-brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Employer portal</div></div></div>
-      <p class="login-kicker">Platform team</p><h1 id="developer-login-title">Employer sign in.</h1><p class="login-copy">Manage hostel clients, room layouts, and platform-wide operations.</p>
+      <div class="login-brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Platform operations</div></div></div>
+      <p class="login-kicker">Platform team</p><h1 id="developer-login-title">Platform sign in.</h1><p class="login-copy">Manage hostel clients, room layouts, and platform operations.</p>
       <form id="developer-login-form">
         <div class="login-field"><label for="developer-username">Username</label><input id="developer-username" name="username" autocomplete="username" required maxlength="40"></div>
         <div class="login-field"><label for="developer-password">Password</label><input id="developer-password" name="password" type="password" autocomplete="current-password" required maxlength="200"></div>
@@ -527,46 +691,46 @@
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Resident desk</div></div>
+        <div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Hostel management</div></div>
       </div>
       <div class="nav-label">Workspace</div>
       <nav class="nav" aria-label="Main navigation">
         <button class="nav-button active" type="button" data-view="overview" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg><span class="nav-text">Overview</span></button>
         <button class="nav-button" type="button" data-view="residents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3.3"/><path d="M3 20v-1.4a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5V20M16 5.2a3.3 3.3 0 0 1 0 6.4M18 14a4.7 4.7 0 0 1 3 4.4V20" stroke-linecap="round"/></svg><span class="nav-text">Residents</span></button>
         <button class="nav-button" type="button" data-view="rooms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 20V8l9-5 9 5v12M8 20v-7h8v7M3 10l9 5 9-5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Rooms</span></button>
-        <button class="nav-button" type="button" data-view="bookings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16m-11 4h6m-6 3h4" stroke-linecap="round"/></svg><span class="nav-text">AI Bookings</span></button>
-        <button class="nav-button" id="qr-nav" type="button" data-view="qr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zm4 0h2v6h-2zm-4 4h2v2h-2z" stroke-linejoin="round"/></svg><span class="nav-text">Vacancy QR</span></button>
-        <button class="nav-button open-room-charges" type="button" aria-haspopup="dialog" aria-controls="room-charges-modal" title="Room type charges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5c-.7-.6-1.6-.9-2.6-.9-1.6 0-2.7.8-2.7 1.9 0 3 5.3 1.2 5.3 4.4 0 1.2-1.2 2.1-2.9 2.1-1.1 0-2.1-.4-2.9-1.1M12.5 6v12" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Room type charges</span></button>
+        <button class="nav-button" type="button" data-view="bookings" aria-label="Visit requests" title="Visit requests"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16m-11 4h6m-6 3h4" stroke-linecap="round"/></svg><span class="nav-text">Visit requests</span></button>
+        <button class="nav-button" type="button" data-view="registrations" data-admin-only aria-label="Resident registration" title="Resident registration"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3M14 3h7v7M21 3l-9 9M8 12h3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Registration</span></button>
+        <button class="nav-button" type="button" data-view="whatsapp" data-admin-only aria-label="WhatsApp announcements" title="WhatsApp announcements"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 11.5a7.5 7.5 0 0 1-11.1 6.6L4 20l1.9-4.5A7.5 7.5 0 1 1 20 11.5Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 9c.4 2 2 3.6 4 4" stroke-linecap="round"/></svg><span class="nav-text">Announcements</span></button>
+        <details class="nav-tools" id="nav-tools">
+          <summary class="nav-tools-summary" aria-label="More tools">More</summary>
+          <button class="nav-button" id="qr-nav" type="button" data-view="qr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zm4 0h2v6h-2zm-4 4h2v2h-2z" stroke-linejoin="round"/></svg><span class="nav-text">Vacancy QR</span></button>
+          <button class="nav-button open-room-charges" type="button" aria-haspopup="dialog" aria-controls="room-charges-modal" title="Room type charges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5c-.7-.6-1.6-.9-2.6-.9-1.6 0-2.7.8-2.7 1.9 0 3 5.3 1.2 5.3 4.4 0 1.2-1.2 2.1-2.9 2.1-1.1 0-2.1-.4-2.9-1.1M12.5 6v12" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Room prices</span></button>
+        </details>
       </nav>
-      <div class="side-note"><strong>Flexible room setup</strong>Organize multiple hostels by floor, then choose the share count for every room.</div>
+      <div class="side-note"><strong>Hostel workspace</strong>Manage residents, rooms, and payments.</div>
     </aside>
 
     <main>
       <div class="topbar">
-        <div class="crumb">Hostel operations <span aria-hidden="true"> / </span> <span id="crumb-view">Overview</span></div>
-        <div class="top-right"><button class="pending-visits" type="button" data-goto="bookings"><span class="pending-dot" aria-hidden="true"></span><span id="pending-visits-label">Pending Visits (0)</span></button><span class="privacy-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 5v2" stroke-linecap="round"/></svg> Encrypted storage</span><div><div class="staff-identity" id="staff-identity"></div></div><button class="logout-button" type="button" id="logout-button">Sign out</button></div>
+        <div class="crumb">Haven Hostel <span aria-hidden="true"> / </span> <span id="crumb-view">Overview</span></div>
+        <div class="top-right"><button class="pending-visits" type="button" data-goto="bookings"><span class="pending-dot" aria-hidden="true"></span><span id="pending-visits-label">Visit requests (0)</span></button><div><div class="staff-identity" id="staff-identity"></div></div><button class="logout-button" type="button" id="logout-button">Sign out</button></div>
       </div>
 
       <section class="page-view" id="overview-view">
         <div class="heading-row">
-          <div><p class="eyebrow">Your hostel, at a glance</p><h1>Good morning.</h1><div class="date" id="today-date"></div></div>
-          <button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Register joiner</button>
+          <div><p class="eyebrow">Overview</p><h1>Your hostel</h1><div class="date" id="today-date"></div></div>
+          <button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Add resident</button>
         </div>
         <div class="stats owner-stats" aria-label="Hostel occupancy and resident payment summary">
-          <button class="stat stat-link" type="button" data-goto="rooms"><div class="stat-label">Total capacity</div><div class="stat-value" id="stat-capacity">0</div><div class="stat-meta">Across configured rooms</div></button>
-          <button class="stat stat-link" type="button" data-goto="rooms"><div class="stat-label">Hostels</div><div class="stat-value" id="stat-total-hostels">0</div><div class="stat-meta">Your active properties</div></button>
-          <button class="stat stat-link" type="button" data-goto="residents"><div class="stat-label">Currently staying</div><div class="stat-value" id="stat-occupied">0</div><div class="stat-meta">Active residents</div></button>
-          <button class="stat stat-link" type="button" data-goto="rooms"><div class="stat-label">Beds available</div><div class="stat-value stat-accent" id="stat-available">32</div><div class="stat-meta">Ready for check-in</div></button>
-          <button class="stat stat-link" type="button" data-goto="rooms"><div class="stat-label">Rooms with space</div><div class="stat-value" id="stat-rooms-open">8</div><div class="stat-meta">At least one open bed</div></button>
-          <button class="stat stat-link" type="button" data-goto="rooms" aria-label="Open all rooms"><div class="stat-label">Total rooms</div><div class="stat-value" id="stat-total-rooms">0</div><div class="stat-meta">Across your hostels</div></button>
-          <button class="stat stat-link" type="button" data-goto="residents"><div class="stat-label">Payments received</div><div class="stat-value" id="stat-paid-count">0</div><div class="stat-meta">Resident payments paid</div></button>
-          <button class="stat stat-link" type="button" data-goto="residents"><div class="stat-label">Payments pending</div><div class="stat-value" id="stat-pending-count">0</div><div class="stat-meta" id="stat-outstanding-text">₹0 outstanding</div></button>
+          <button class="stat stat-link" type="button" data-goto="residents"><div class="stat-label">Residents</div><div class="stat-value" id="stat-occupied">0</div><div class="stat-meta">Currently staying</div></button>
+          <button class="stat stat-link" type="button" data-goto="rooms"><div class="stat-label">Beds available</div><div class="stat-value stat-accent" id="stat-available">0</div><div class="stat-meta">Ready for check-in</div></button>
+          <button class="stat stat-link" type="button" data-goto="residents"><div class="stat-label">Payments due</div><div class="stat-value" id="stat-pending-count">0</div><div class="stat-meta" id="stat-outstanding-text">₹0 outstanding</div></button>
         </div>
         <section class="section" aria-labelledby="activity-title">
-          <div class="section-head"><div><h2 class="section-title" id="activity-title">Recent activity</h2><div class="section-subtitle">Latest five of each activity</div></div></div>
+          <div class="section-head"><div><h2 class="section-title" id="activity-title">Recent activity</h2><div class="section-subtitle">Recent check-ins and check-outs</div></div></div>
           <div class="activity-columns">
-            <section class="activity-column" aria-labelledby="checkin-activity-title"><h3 class="activity-column-head" id="checkin-activity-title">Last 5 check-ins</h3><div class="activity-list" id="checkin-activity-list"></div></section>
-            <section class="activity-column" aria-labelledby="checkout-activity-title"><h3 class="activity-column-head" id="checkout-activity-title">Last 5 check-outs</h3><div class="activity-list" id="checkout-activity-list"></div></section>
+            <section class="activity-column" aria-labelledby="checkin-activity-title"><h3 class="activity-column-head" id="checkin-activity-title">Check-ins</h3><div class="activity-list" id="checkin-activity-list"></div></section>
+            <section class="activity-column" aria-labelledby="checkout-activity-title"><h3 class="activity-column-head" id="checkout-activity-title">Check-outs</h3><div class="activity-list" id="checkout-activity-list"></div></section>
           </div>
         </section>
         <section class="section residents-section" aria-labelledby="residents-title">
@@ -576,25 +740,55 @@
       </section>
 
       <section class="page-view" id="residents-view" hidden>
-        <div class="heading-row"><div><p class="eyebrow">People & stays</p><h1>Residents</h1><div class="date">Manage current hostel stays and check-outs.</div></div><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Register joiner</button></div>
-        <section class="section"><div class="section-head"><div><h2 class="section-title">Current residents</h2><div class="section-subtitle" id="resident-count-all">No active residents</div></div><div class="table-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5" stroke-linecap="round"/></svg><input class="search" id="resident-search-all" type="search" placeholder="Find a resident" aria-label="Find a resident"></div></div></div><div id="resident-table-all"></div></section>
+        <div class="heading-row"><div><p class="eyebrow">Residents</p><h1>Residents</h1><div class="date">View current stays and manage check-ins and check-outs.</div></div><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Add resident</button></div>
+        <section class="section">
+          <div class="section-head"><div><h2 class="section-title">Current residents</h2><div class="section-subtitle" id="resident-count-all">No active residents</div></div><div class="table-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5" stroke-linecap="round"/></svg><input class="search" id="resident-search-all" type="search" placeholder="Find a resident" aria-label="Find a resident"></div></div></div><div id="resident-table-all"></div>
+        </section>
+      </section>
+
+      <section class="page-view" id="whatsapp-view" hidden>
+        <div class="heading-row"><div><p class="eyebrow">Resident communication</p><h1>WhatsApp announcements</h1><div class="date">Send an update to residents who have agreed to receive messages.</div></div></div>
+        <section class="section" id="whatsapp-broadcast-section">
+          <div class="section-head"><div><h2 class="section-title">New announcement</h2><div class="section-subtitle">Messages are sent only to active residents who have opted in.</div></div></div>
+          <p class="field-help broadcast-status" id="whatsapp-broadcast-status" role="status">Checking WhatsApp setup…</p>
+          <form id="whatsapp-broadcast-form" class="registration-tools">
+            <div class="field"><label for="whatsapp-broadcast-hostel">Hostel</label><select id="whatsapp-broadcast-hostel"></select></div>
+            <div class="field broadcast-field"><label for="whatsapp-broadcast-message">Announcement</label><textarea class="broadcast-message" id="whatsapp-broadcast-message" maxlength="1024" placeholder="Write an announcement for your opted-in guests." required></textarea></div>
+            <div class="broadcast-actions"><span class="field-help" id="whatsapp-broadcast-count">0 opted-in guests</span><button class="primary-button" id="send-whatsapp-broadcast" type="submit" disabled>Send announcement</button></div>
+          </form>
+          <p class="field-help broadcast-status">Sending requires WhatsApp Cloud API credentials and an approved broadcast template.</p>
+        </section>
+      </section>
+
+      <section class="page-view" id="registrations-view" hidden>
+        <div class="heading-row"><div><p class="eyebrow">New residents</p><h1>Registration</h1><div class="date">Create a sign-up link, then review the application before assigning a bed.</div></div></div>
+        <section class="section registration-tools-section" id="registration-admin-section">
+          <div class="section-head"><div><h2 class="section-title">Invite a new resident</h2><div class="section-subtitle">Share a one-time registration link with the joiner.</div></div></div>
+          <div class="registration-tools"><div class="field"><label for="registration-hostel-select">Hostel</label><select id="registration-hostel-select"></select></div><div class="field"><label for="registration-whatsapp">Joiner’s WhatsApp number</label><input id="registration-whatsapp" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" pattern="\+?[0-9\s().-]{10,20}" placeholder="10-digit number"></div><button class="primary-button" id="create-registration-invite" type="button">Create registration link</button></div>
+          <div class="registration-link-row" id="registration-invite-result" hidden><input id="registration-invite-url" aria-label="New joiner registration link" readonly><button class="secondary-button" type="button" data-copy-registration-link>Copy link</button><a class="secondary-button" id="registration-invite-whatsapp" href="#" target="_blank" rel="noopener noreferrer">Open WhatsApp to send</a></div>
+          <div class="registration-list" id="registration-invite-list"><div class="table-empty">No registration links created yet.</div></div>
+        </section>
+        <section class="section registration-tools-section" id="registration-applications-section">
+          <div class="section-head"><div><h2 class="section-title">Applications awaiting approval</h2><div class="section-subtitle" id="registration-application-count">No applications</div></div></div>
+          <div class="registration-list" id="registration-application-list"><div class="table-empty">No pending applications.</div></div>
+        </section>
       </section>
 
       <section class="page-view" id="rooms-view" hidden>
-        <div class="heading-row"><div><p class="eyebrow">Hostel structure</p><h1>Your room layout</h1><div class="date">View floors, rooms, and current bed assignments. Contact your platform team to change the layout.</div></div><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Register joiner</button></div>
-        <section class="section"><div class="section-head"><div><h2 class="section-title">Room layout</h2><div class="section-subtitle">The structure is read-only here. Add or move residents with check-in and check-out actions.</div></div></div><div class="structure-create" id="hostel-create-wrap"><form class="structure-form" id="hostel-form"><div class="field"><label for="hostel-name">New hostel name</label><input id="hostel-name" name="name" required maxlength="100" placeholder="e.g. North Campus"></div><button class="primary-button" type="submit">Add hostel</button></form></div><div class="hostel-structure" id="hostel-structure"></div></section>
+        <div class="heading-row"><div><p class="eyebrow">Rooms</p><h1>Your rooms</h1><div class="date">View floors, rooms, and available beds.</div></div><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Add resident</button></div>
+        <section class="section"><div class="section-head"><div><h2 class="section-title">Room layout</h2><div class="section-subtitle" id="room-layout-description">The structure is read-only here. Add or move residents with check-in and check-out actions.</div></div></div><div class="structure-create" id="hostel-create-wrap"><form class="structure-form" id="hostel-form"><div class="field"><label for="hostel-name">New hostel name</label><input id="hostel-name" name="name" required maxlength="100" placeholder="e.g. North Campus"></div><button class="primary-button" type="submit">Add hostel</button></form></div><div class="hostel-structure" id="hostel-structure"></div></section>
       </section>
 
       <section class="page-view" id="bookings-view" hidden>
-        <div class="heading-row"><div><p class="eyebrow">WhatsApp enquiries</p><h1>AI Bookings</h1><div class="date">Visit requests hold a matching room for 24 hours.</div></div></div>
+        <div class="heading-row"><div><p class="eyebrow">WhatsApp enquiries</p><h1>Visit requests</h1><div class="date">Review and confirm requested hostel visits.</div></div></div>
         <section class="section"><div class="section-head"><div><h2 class="section-title">Pending visits</h2><div class="section-subtitle" id="booking-count">No pending visits</div></div></div><div class="booking-list" id="booking-list"><div class="table-empty">No pending visits.</div></div></section>
       </section>
 
       <section class="page-view" id="qr-view" hidden>
-        <div class="heading-row"><div><p class="eyebrow">Walk-in enquiries</p><h1>Generate Vacancy QR</h1><div class="date">Choose a hostel to create its WhatsApp vacancy QR.</div></div></div>
+        <div class="heading-row"><div><p class="eyebrow">Walk-in enquiries</p><h1>Vacancy QR code</h1><div class="date">Create a WhatsApp link for people asking about vacancies.</div></div></div>
         <section class="section">
           <div class="qr-controls"><div class="field"><label for="qr-hostel-select">Hostel</label><select id="qr-hostel-select"></select></div><button class="primary-button" id="generate-qr" type="button">Generate QR</button></div>
-          <div class="qr-stage"><div class="qr-empty" id="qr-empty">Select a hostel and generate its vacancy QR.</div><article class="qr-card" id="qr-card" hidden><h2 class="qr-hostel-name" id="qr-hostel-name"></h2><img class="qr-image" id="qr-image" alt="WhatsApp vacancy QR code"><p class="qr-instruction">Stick this on gate. Students scan -> Auto gets vacancy list on WhatsApp</p><div class="qr-actions"><a id="qr-download" href="#" download>Download PNG</a><button id="qr-print" type="button">Print</button></div></article></div>
+          <div class="qr-stage"><div class="qr-empty" id="qr-empty">Select a hostel to create its vacancy QR code.</div><article class="qr-card" id="qr-card" hidden><h2 class="qr-hostel-name" id="qr-hostel-name"></h2><img class="qr-image" id="qr-image" alt="WhatsApp vacancy QR code"><p class="qr-instruction">Display this QR at your entrance. Visitors can scan it to see current vacancies on WhatsApp.</p><div class="qr-actions"><a id="qr-download" href="#" download>Download PNG</a><button id="qr-print" type="button">Print</button></div></article></div>
         </section>
       </section>
     </main>
@@ -603,18 +797,13 @@
   <div class="platform-app" id="platform-app" hidden>
     <header class="platform-topbar"><div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20"><path d="M4 20V9l8-6 8 6v11M9 20v-6h6v6M3 20h18" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><div class="brand-name">Haven Hostel</div><div class="brand-sub">Platform operations</div></div></div><div class="platform-identity"><span class="platform-badge">EMPLOYER PORTAL</span><span class="staff-identity" id="platform-identity"></span><button class="text-button" type="button" id="change-platform-password-button">Change password</button><button class="logout-button" type="button" id="platform-logout-button">Sign out</button></div></header>
     <main class="platform-main">
-      <div class="heading-row"><div><p class="eyebrow">Platform operations</p><h1>Employer workspace</h1><div class="date">Register the client, set up rooms, then review subscriptions.</div></div></div>
+      <div class="heading-row"><div><p class="eyebrow">Platform operations</p><h1>Employer workspace</h1><div class="date">Register clients and review subscriptions.</div></div></div>
       <nav class="platform-steps" aria-label="Employer setup steps">
         <button class="platform-step-button" type="button" data-platform-step="client" aria-current="step"><span class="platform-step-number">1</span><span>Register client</span></button>
-        <button class="platform-step-button" type="button" data-platform-step="layout"><span class="platform-step-number">2</span><span>Hostel layout</span></button>
-        <button class="platform-step-button" type="button" data-platform-step="dashboard"><span class="platform-step-number">3</span><span>Dashboard</span></button>
+        <button class="platform-step-button" type="button" data-platform-step="dashboard"><span class="platform-step-number">2</span><span>Dashboard</span></button>
       </nav>
       <section class="platform-step-panel" id="platform-client-step">
-        <section class="section"><div class="section-head"><div><h2 class="section-title">Register a hostel client</h2><div class="section-subtitle">Creates the owner's login and first hostel.</div></div></div><form class="platform-form-body" id="platform-client-form"><div class="field"><label for="client-owner-username">Owner username</label><input id="client-owner-username" name="owner_username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9._\-]{3,40}"></div><div class="field"><label for="client-owner-password">Temporary owner password</label><input id="client-owner-password" name="password" type="password" required minlength="8" maxlength="200" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,200}" title="Use 8+ characters with uppercase, lowercase, a number, and a special character."><div class="field-help">At least 8 characters with uppercase, lowercase, a number, and a special character.</div></div><div class="field"><label for="client-hostel-name">Hostel name</label><input id="client-hostel-name" name="hostel_name" required minlength="2" maxlength="100"></div><button class="primary-button" type="submit">Register client</button></form></section>
-      </section>
-      <section class="platform-step-panel" id="platform-layout-step" hidden>
-        <section class="section"><div class="section-head"><div><h2 class="section-title">Hostel room layout</h2><div class="section-subtitle">Open a registered client's layout from the Dashboard. Finish setup when you are ready to register another client.</div></div></div><div class="hostel-structure" id="platform-hostel-structure"><div class="table-empty">Register a client to set up its hostel layout.</div></div></section>
-        <div class="platform-step-actions"><button class="primary-button" type="button" data-finish-platform-layout>Finish and register next client</button></div>
+        <section class="section"><div class="section-head"><div><h2 class="section-title">Register a hostel client</h2><div class="section-subtitle">Creates the owner's login and first hostel.</div></div></div><form class="platform-form-body" id="platform-client-form"><div class="field"><label for="client-owner-username">Owner username</label><input id="client-owner-username" name="owner_username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9._\-]{3,40}"></div><div class="field"><label for="client-owner-password">Temporary owner password</label><input id="client-owner-password" name="password" type="password" required minlength="8" maxlength="200" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,200}" title="Use 8+ characters with uppercase, lowercase, a number, and a special character."><div class="field-help">At least 8 characters with uppercase, lowercase, a number, and a special character.</div></div><div class="field"><label for="client-hostel-name">Hostel name</label><input id="client-hostel-name" name="hostel_name" required minlength="2" maxlength="100"></div><div class="field"><label for="client-hostel-address">Hostel address</label><input id="client-hostel-address" name="hostel_address" required minlength="5" maxlength="300" autocomplete="street-address"></div><div class="field"><label for="client-location">Location <span class="field-help-inline">Optional</span></label><input id="client-location" name="location" maxlength="160" placeholder="Area, landmark, or map location"></div>        <div class="field"><label for="client-owner-mobile">Owner mobile number</label><input id="client-owner-mobile" name="owner_mobile" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" pattern="\+?[0-9\s().-]{10,20}" placeholder="10-digit Indian number (defaults to +91)"></div><button class="primary-button" type="submit">Register client</button></form></section>
       </section>
       <section class="platform-step-panel" id="platform-dashboard-step" hidden>
         <div class="stats" aria-label="Clients and subscription payments">
@@ -633,13 +822,13 @@
 
   <div class="modal-backdrop" id="join-modal" hidden>
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="join-title">
-      <div class="modal-head"><div><h2 id="join-title">Register a new joiner</h2><p>Capture resident details and assign an available bed.</p></div><button class="close-button" type="button" data-close aria-label="Close dialog">×</button></div>
+      <div class="modal-head"><div><h2 id="join-title">Add a resident</h2><p>Enter resident details and assign an available bed.</p></div><button class="close-button" type="button" data-close aria-label="Close dialog">×</button></div>
       <form id="join-form">
         <div class="form-body">
           <div id="form-error" class="form-error" role="alert" hidden></div>
           <div class="form-grid">
             <div class="field full"><label for="resident-name-input">Full name</label><input id="resident-name-input" name="name" type="text" autocomplete="name" required maxlength="80" placeholder="As shown on ID"></div>
-            <div class="field"><label for="mobile-input">Mobile number</label><input id="mobile-input" name="mobile" type="tel" inputmode="numeric" autocomplete="tel" required placeholder="10-digit number"></div>
+            <div class="field"><label for="mobile-input">Mobile number</label><input id="mobile-input" name="mobile" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" placeholder="10-digit Indian number (defaults to +91)"></div>
             <div class="field"><label for="aadhaar-input">Aadhaar number <span>(optional)</span></label><input id="aadhaar-input" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off" placeholder="12 digits"><div class="field-help">Hidden on screen after registration.</div></div>
             <div class="field"><label for="room-select">Assign room</label><select id="room-select" name="room" required></select></div>
             <div class="field"><label for="bed-select">Assign bed</label><select id="bed-select" name="bed_number" required></select></div>
@@ -649,7 +838,8 @@
             <div class="field" id="amount-due-field" hidden><label for="amount-due">Balance due <span>(INR)</span></label><input id="amount-due" name="amount_due" type="number" min="0.01" max="1000000" step="0.01" placeholder="Amount outstanding"><div class="field-help">This amount is included in the WhatsApp reminder.</div></div>
             <div class="field"><label for="person-photo">Person photo <span>(optional)</span></label><input id="person-photo" name="person_photo" type="file" accept="image/*"><div class="field-help">Image file, up to 5 MB, if provided.</div></div>
             <div class="field"><label for="aadhaar-photo">Aadhaar photo <span>(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/*"><div class="field-help">Image file, up to 5 MB, if provided.</div></div>
-            <div class="field full sensitive-note">Sensitive documents are not uploaded or saved by this demo. They stay in this page's temporary memory and are cleared when it is closed or refreshed.</div>
+            <div class="field full"><label class="consent"><input name="whatsapp_opt_in" type="checkbox" value="true"><span>Resident has agreed to receive hostel announcements and updates via WhatsApp. Optional; they can opt out later.</span></label></div>
+            <div class="field full sensitive-note">Uploaded photos are encrypted and available only to authorized hostel staff. Aadhaar and photos remain optional.</div>
           </div>
           <div class="form-footer"><span class="form-footer-note">Aadhaar and photos are optional.</span><div class="footer-actions"><button class="cancel-button" type="button" data-close>Cancel</button><button class="primary-button" type="submit">Complete check-in</button></div></div>
         </div>
@@ -658,7 +848,7 @@
   </div>
   <div class="modal-backdrop" id="room-charges-modal" hidden>
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="room-charges-title">
-      <div class="modal-head"><div><h2 id="room-charges-title">Room type charges</h2><p>Set a monthly price for each sharing type available in your hostels.</p></div><button class="close-button" type="button" data-close-room-charges aria-label="Close room type charges">×</button></div>
+      <div class="modal-head"><div><h2 id="room-charges-title">Room type charges</h2><p>Set monthly rates by sharing capacity and AC type. Add sharing above 6 as needed; new rooms use the matching rate.</p></div><button class="close-button" type="button" data-close-room-charges aria-label="Close room type charges">×</button></div>
       <div class="room-charges-list" id="room-charges-list"><div class="table-empty">Room charges load with your hostel layout.</div></div>
     </section>
   </div>

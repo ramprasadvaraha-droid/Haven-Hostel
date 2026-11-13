@@ -9,13 +9,13 @@ from app.security import decrypt_bytes, encrypt_bytes
 
 
 BLOB_API = "https://blob.vercel-storage.com"
-BLOB_HOST_SUFFIX = ".blob.vercel-storage.com"
+BLOB_HOST_SUFFIX = ".private.blob.vercel-storage.com"
 
 
 def validate_blob_url(blob_url: str) -> str:
     parsed = urlparse(blob_url)
     if parsed.scheme != "https" or not parsed.hostname or not parsed.hostname.endswith(BLOB_HOST_SUFFIX):
-        raise ValueError("Stored file URL is not a Vercel Blob URL.")
+        raise ValueError("Stored file URL is not a private Vercel Blob URL.")
     return blob_url
 
 
@@ -30,6 +30,7 @@ def put_encrypted_blob(pathname: str, encrypted_contents: bytes) -> str:
             "Authorization": f"Bearer {config.BLOB_READ_WRITE_TOKEN}",
             "x-api-version": "7",
             "x-content-type": "application/octet-stream",
+            "x-vercel-blob-access": "private",
         },
         timeout=30,
     )
@@ -41,7 +42,17 @@ def put_encrypted_blob(pathname: str, encrypted_contents: bytes) -> str:
     return validate_blob_url(blob_url)
 
 
+def document_storage_ready() -> bool:
+    return not config.VERCEL_DEPLOYMENT or bool(
+        config.DATABASE_URL and config.BLOB_READ_WRITE_TOKEN
+    )
+
+
 def save_encrypted_document(contents: bytes) -> str:
+    if not document_storage_ready():
+        raise RuntimeError(
+            "Persistent Postgres and private Vercel Blob storage are required for Vercel document uploads."
+        )
     encrypted_contents = encrypt_bytes(contents)
     if config.BLOB_READ_WRITE_TOKEN:
         return put_encrypted_blob(f"resident-documents/{uuid.uuid4().hex}.enc", encrypted_contents)
