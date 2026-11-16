@@ -108,7 +108,11 @@ CREATE TABLE IF NOT EXISTS residents (
     id TEXT PRIMARY KEY,
     name_ciphertext TEXT NOT NULL,
     mobile_ciphertext TEXT NOT NULL,
+    emergency_contact_ciphertext TEXT,
+    emergency_contact_relationship_ciphertext TEXT,
     aadhaar_ciphertext TEXT,
+    purpose_of_stay_ciphertext TEXT,
+    office_address_ciphertext TEXT,
     room_id TEXT NOT NULL REFERENCES rooms(id),
     bed_number INTEGER NOT NULL CHECK (bed_number BETWEEN 1 AND 20),
     joining_date TEXT NOT NULL,
@@ -118,7 +122,8 @@ CREATE TABLE IF NOT EXISTS residents (
     whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1)),
     created_by TEXT NOT NULL REFERENCES staff(id),
     created_at TEXT NOT NULL,
-    checked_out_at TEXT
+    checked_out_at TEXT,
+    retention_purging_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS active_bed_assignment
 ON residents(room_id, bed_number) WHERE checked_out_at IS NULL;
@@ -140,7 +145,11 @@ CREATE TABLE IF NOT EXISTS registration_applications (
     hostel_id TEXT NOT NULL REFERENCES hostels(id),
     name_ciphertext TEXT NOT NULL,
     mobile_ciphertext TEXT NOT NULL,
+    emergency_contact_ciphertext TEXT,
+    emergency_contact_relationship_ciphertext TEXT,
     aadhaar_ciphertext TEXT,
+    purpose_of_stay_ciphertext TEXT,
+    office_address_ciphertext TEXT,
     whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1)),
     terms_accepted_at TEXT,
     terms_version TEXT,
@@ -152,7 +161,8 @@ CREATE TABLE IF NOT EXISTS registration_applications (
     submitted_at TEXT NOT NULL,
     reviewed_at TEXT,
     reviewed_by TEXT REFERENCES staff(id),
-    resident_id TEXT REFERENCES residents(id)
+    resident_id TEXT REFERENCES residents(id),
+    retention_purging_at TEXT
 );
 CREATE INDEX IF NOT EXISTS registration_application_hostel_status
 ON registration_applications(hostel_id, status, submitted_at DESC);
@@ -440,6 +450,42 @@ def initialize_database() -> None:
             )
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (14, ?) ON CONFLICT DO NOTHING",
+                (now,),
+            )
+            for table in ("residents", "registration_applications"):
+                for column in (
+                    "emergency_contact_ciphertext",
+                    "purpose_of_stay_ciphertext",
+                    "office_address_ciphertext",
+                ):
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} TEXT")
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (15, ?) ON CONFLICT DO NOTHING",
+                (now,),
+            )
+            connection.execute(
+                "ALTER TABLE residents ADD COLUMN IF NOT EXISTS retention_purging_at TEXT"
+            )
+            connection.execute(
+                "ALTER TABLE registration_applications ADD COLUMN IF NOT EXISTS retention_purging_at TEXT"
+            )
+            connection.execute(
+                "ALTER TABLE residents ADD COLUMN IF NOT EXISTS emergency_contact_relationship_ciphertext TEXT"
+            )
+            connection.execute(
+                "ALTER TABLE registration_applications ADD COLUMN IF NOT EXISTS "
+                "emergency_contact_relationship_ciphertext TEXT"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS resident_retention_checkout "
+                "ON residents(checked_out_at, retention_purging_at)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS registration_pending_retention "
+                "ON registration_applications(status, submitted_at, retention_purging_at)"
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (16, ?) ON CONFLICT DO NOTHING",
                 (now,),
             )
         return
@@ -757,6 +803,59 @@ def initialize_database() -> None:
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (14, ?)",
                     (datetime.now(timezone.utc).isoformat(),),
                 )
+            migration_fifteen = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 15"
+            ).fetchone()
+            if not migration_fifteen:
+                for table in ("residents", "registration_applications"):
+                    columns = {
+                        row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+                    }
+                    for column in (
+                        "emergency_contact_ciphertext",
+                        "purpose_of_stay_ciphertext",
+                        "office_address_ciphertext",
+                    ):
+                        if column not in columns:
+                            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (15, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_sixteen = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 16"
+            ).fetchone()
+            if not migration_sixteen:
+                for table in ("residents", "registration_applications"):
+                    columns = {
+                        row[1] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+                    }
+                    for column in (
+                        "emergency_contact_relationship_ciphertext",
+                        "retention_purging_at",
+                    ):
+                        if column not in columns:
+                            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS resident_retention_checkout "
+                    "ON residents(checked_out_at, retention_purging_at)"
+                )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS registration_pending_retention "
+                    "ON registration_applications(status, submitted_at, retention_purging_at)"
+                )
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (16, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS resident_retention_checkout "
+                "ON residents(checked_out_at, retention_purging_at)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS registration_pending_retention "
+                "ON registration_applications(status, submitted_at, retention_purging_at)"
+            )
             connection.commit()
         except Exception:
             connection.rollback()

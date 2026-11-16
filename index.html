@@ -31,7 +31,7 @@
     .landing-site { min-height: 100vh; background: #f7f8f4; }
     .landing-nav { min-height: 74px; padding: 12px clamp(18px, 5vw, 76px); display: flex; align-items: center; justify-content: space-between; gap: 18px; background: #fbfcf9; }
     .landing-nav .brand { margin: 0; padding: 0; }
-    .landing-nav-links { display: flex; align-items: center; gap: 18px; }
+    .landing-nav-links { display: flex; align-items: center; gap: 18px; }6
     .landing-actions { display: flex; align-items: center; gap: 8px; }
     .landing-nav-links a { color: #4e5b53; font-size: 11px; font-weight: 600; text-decoration: none; }
     .landing-nav-links a:hover { color: var(--green); }
@@ -698,10 +698,10 @@
       <div class="nav-label">Workspace</div>
       <nav class="nav" aria-label="Main navigation">
         <button class="nav-button active" type="button" data-view="overview" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg><span class="nav-text">Overview</span></button>
+        <button class="nav-button" type="button" data-view="registrations" data-admin-only aria-label="Resident registration" title="Resident registration"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3M14 3h7v7M21 3l-9 9M8 12h3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Registration</span></button>
         <button class="nav-button" type="button" data-view="residents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3.3"/><path d="M3 20v-1.4a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5V20M16 5.2a3.3 3.3 0 0 1 0 6.4M18 14a4.7 4.7 0 0 1 3 4.4V20" stroke-linecap="round"/></svg><span class="nav-text">Residents</span></button>
         <button class="nav-button" type="button" data-view="rooms"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 20V8l9-5 9 5v12M8 20v-7h8v7M3 10l9 5 9-5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Rooms</span></button>
         <button class="nav-button" type="button" data-view="bookings" aria-label="Visit requests" title="Visit requests"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4m8-4v4M4 10h16m-11 4h6m-6 3h4" stroke-linecap="round"/></svg><span class="nav-text">Visit requests</span></button>
-        <button class="nav-button" type="button" data-view="registrations" data-admin-only aria-label="Resident registration" title="Resident registration"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3M14 3h7v7M21 3l-9 9M8 12h3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="nav-text">Registration</span></button>
         <button class="nav-button" type="button" data-view="whatsapp" data-admin-only aria-label="WhatsApp announcements" title="WhatsApp announcements"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 11.5a7.5 7.5 0 0 1-11.1 6.6L4 20l1.9-4.5A7.5 7.5 0 1 1 20 11.5Z" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 9c.4 2 2 3.6 4 4" stroke-linecap="round"/></svg><span class="nav-text">Announcements</span></button>
         <details class="nav-tools" id="nav-tools">
           <summary class="nav-tools-summary" aria-label="More tools">More</summary>
@@ -831,7 +831,12 @@
           <div class="form-grid">
             <div class="field full"><label for="resident-name-input">Full name</label><input id="resident-name-input" name="name" type="text" autocomplete="name" required maxlength="80" placeholder="As shown on ID"></div>
             <div class="field"><label for="mobile-input">Mobile number</label><input id="mobile-input" name="mobile" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" placeholder="10-digit Indian number (defaults to +91)"></div>
+            <div class="field"><label for="emergency-contact-input">Emergency contact number <span>(optional)</span></label><input id="emergency-contact-input" name="emergency_contact" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="10-digit Indian number"></div>
+            <div class="field" id="emergency-relationship-field" hidden><label for="emergency-relationship-input">Relationship to emergency contact</label><input id="emergency-relationship-input" name="emergency_contact_relationship" maxlength="80" placeholder="e.g. Parent, spouse, friend"></div>
             <div class="field"><label for="aadhaar-input">Aadhaar number <span>(optional)</span></label><input id="aadhaar-input" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off" placeholder="12 digits"><div class="field-help">Hidden on screen after registration.</div></div>
+            <div class="field"><label for="purpose-of-stay-input">Purpose of stay <span>(optional)</span></label><select id="purpose-of-stay-input" name="purpose_of_stay"><option value="">Choose if you wish</option><option value="Work">Work</option><option value="Studies">Studies</option><option value="Other">Other</option></select></div>
+            <div class="field" id="purpose-other-field" hidden><label for="purpose-other-input">Please describe</label><input id="purpose-other-input" name="purpose_other" maxlength="120" placeholder="Briefly describe your purpose"></div>
+            <div class="field full"><label for="office-address-input">Workplace/college address <span>(optional)</span></label><input id="office-address-input" name="office_address" type="text" maxlength="300" autocomplete="street-address" placeholder="Workplace or college address"></div>
             <div class="field"><label for="room-select">Assign room</label><select id="room-select" name="room" required></select></div>
             <div class="field"><label for="bed-select">Assign bed</label><select id="bed-select" name="bed_number" required></select></div>
             <div class="field"><label for="checkin-input">Joining date</label><input id="checkin-input" name="joining_date" type="date" required></div>

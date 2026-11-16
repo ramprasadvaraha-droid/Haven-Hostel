@@ -19,6 +19,12 @@
   const bedSelect = $('#bed-select');
   const joiningDate = $('#checkin-input');
   const paymentDate = $('#payment-date');
+  const emergencyContactInput = $('#emergency-contact-input');
+  const emergencyRelationshipInput = $('#emergency-relationship-input');
+  const emergencyRelationshipField = $('#emergency-relationship-field');
+  const purposeInput = $('#purpose-of-stay-input');
+  const purposeOtherInput = $('#purpose-other-input');
+  const purposeOtherField = $('#purpose-other-field');
   const state = { user: null, summary: null, rooms: [], residents: [], activity: [], bookings: null, newBookingIds: new Set(), platform: null, roomTypeCharges: [], roomChargeExtraShareCounts: {}, registrations: null, whatsappBroadcastStatus: null };
   let csrfToken = '';
   let platformCsrfToken = '';
@@ -26,6 +32,17 @@
   let layoutEditHostelId = '';
   let platformSetupDraft = { hostelId: '', step: 1, rooms: [] };
   let toastTimer;
+
+  function updateJoinConditionalFields() {
+    const hasEmergencyContact = Boolean(emergencyContactInput.value.trim());
+    emergencyRelationshipField.hidden = !hasEmergencyContact;
+    emergencyRelationshipInput.required = hasEmergencyContact;
+    if (!hasEmergencyContact) emergencyRelationshipInput.value = '';
+    const hasOtherPurpose = purposeInput.value === 'Other';
+    purposeOtherField.hidden = !hasOtherPurpose;
+    purposeOtherInput.required = hasOtherPurpose;
+    if (!hasOtherPurpose) purposeOtherInput.value = '';
+  }
 
   const bedIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 18v-8M3 15h18v5M7 15v-5a3 3 0 0 1 3-3h7a4 4 0 0 1 4 4v4M3 20v-2m18 2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -419,7 +436,7 @@
     if (!filtered.length) {
       return `<div class="table-empty">${state.residents.length ? 'No residents match your search.' : 'No active residents yet. Register a joiner to get started.'}</div>`;
     }
-    return `<div class="table-scroll"><table><thead><tr><th>Resident</th><th>Hostel / Floor / Room</th><th>Joining date</th><th>Next payment date</th><th>Payment</th><th>Documents</th><th>WhatsApp</th><th>Actions</th></tr></thead><tbody>${filtered.map(resident => `<tr><td><div class="resident-name">${escapeHTML(resident.name)}</div><div class="resident-contact">${escapeHTML(resident.mobile)}${resident.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(resident.aadhaar_last4)}` : ''}</div><div class="resident-contact">Rules accepted: ${resident.terms_accepted_at ? escapeHTML(formatDate(resident.terms_accepted_at.slice(0, 10))) : 'Not recorded'}</div></td><td><span class="room-pill">${escapeHTML(resident.room)} · Bed ${resident.bed_number}</span><div class="resident-contact">${escapeHTML(resident.hostel_name)} · ${floorLabel(resident.floor_number)}</div></td><td>${escapeHTML(formatDate(resident.joining_date))}</td><td>${escapeHTML(formatDate(resident.payment_due_date))}</td><td>${resident.payment_status === 'unpaid' ? `<span class="payment-unpaid">${escapeHTML(formatCurrency(resident.amount_due_paise))} due</span>` : '<span class="payment-paid">Paid</span>'}</td><td>${residentDocuments(resident)}</td><td><span class="resident-contact">${resident.whatsapp_opt_in ? 'Opted in' : 'Not opted in'}</span><button class="consent-toggle" type="button" data-whatsapp-consent="${escapeHTML(resident.id)}">${resident.whatsapp_opt_in ? 'Opt out' : 'Record opt-in'}</button></td><td><div class="payment-actions">${resident.payment_status === 'unpaid' ? `<button class="whatsapp-button" type="button" data-whatsapp="${escapeHTML(resident.id)}">Send reminder</button><button class="mark-paid-button" type="button" data-mark-paid="${escapeHTML(resident.id)}">Mark paid</button>` : ''}<button class="exit-button" type="button" data-checkout="${escapeHTML(resident.id)}">Check out</button></div></td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-scroll"><table><thead><tr><th>Resident</th><th>Hostel / Floor / Room</th><th>Joining date</th><th>Next payment date</th><th>Payment</th><th>Documents</th><th>WhatsApp</th><th>Actions</th></tr></thead><tbody>${filtered.map(resident => `<tr><td><div class="resident-name">${escapeHTML(resident.name)}</div><div class="resident-contact">${escapeHTML(resident.mobile)}${resident.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(resident.aadhaar_last4)}` : ''}</div>${resident.emergency_contact ? `<div class="resident-contact">Emergency: ${escapeHTML(resident.emergency_contact)}${resident.emergency_contact_relationship ? ` · ${escapeHTML(resident.emergency_contact_relationship)}` : ''}</div>` : ''}${resident.purpose_of_stay ? `<div class="resident-contact">Purpose: ${escapeHTML(resident.purpose_of_stay)}</div>` : ''}${resident.office_address ? `<div class="resident-contact">Workplace/college: ${escapeHTML(resident.office_address)}</div>` : ''}<div class="resident-contact">Rules accepted: ${resident.terms_accepted_at ? escapeHTML(formatDate(resident.terms_accepted_at.slice(0, 10))) : 'Not recorded'}</div></td><td><span class="room-pill">${escapeHTML(resident.room)} · Bed ${resident.bed_number}</span><div class="resident-contact">${escapeHTML(resident.hostel_name)} · ${floorLabel(resident.floor_number)}</div></td><td>${escapeHTML(formatDate(resident.joining_date))}</td><td>${escapeHTML(formatDate(resident.payment_due_date))}</td><td>${resident.payment_status === 'unpaid' ? `<span class="payment-unpaid">${escapeHTML(formatCurrency(resident.amount_due_paise))} due</span>` : '<span class="payment-paid">Paid</span>'}</td><td>${residentDocuments(resident)}</td><td><span class="resident-contact">${resident.whatsapp_opt_in ? 'Opted in' : 'Not opted in'}</span><button class="consent-toggle" type="button" data-whatsapp-consent="${escapeHTML(resident.id)}">${resident.whatsapp_opt_in ? 'Opt out' : 'Record opt-in'}</button></td><td><div class="payment-actions">${resident.payment_status === 'unpaid' ? `<button class="whatsapp-button" type="button" data-whatsapp="${escapeHTML(resident.id)}">Send reminder</button><button class="mark-paid-button" type="button" data-mark-paid="${escapeHTML(resident.id)}">Mark paid</button>` : ''}<button class="exit-button" type="button" data-checkout="${escapeHTML(resident.id)}">Check out</button></div></td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function renderResidents() {
@@ -515,7 +532,7 @@
         const termsAccepted = application.terms_accepted_at
           ? `Accepted ${escapeHTML(formatDate(application.terms_accepted_at.slice(0, 10)))} (${escapeHTML(application.terms_version)})`
           : 'Not recorded';
-        return `<article class="registration-card"><div class="registration-card-head"><div><h3 class="registration-card-title">${escapeHTML(application.name)}</h3><div class="registration-card-meta">${escapeHTML(application.mobile)}${application.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(application.aadhaar_last4)}` : ''}<br>${escapeHTML(application.hostel_name)} · Submitted ${escapeHTML(submitted)} · WhatsApp updates ${application.whatsapp_opt_in ? 'opted in' : 'not opted in'}<br>Rules &amp; regulations: ${termsAccepted}<br>${documents}</div></div>${photoPreview}</div>${approveForm}</article>`;
+        return `<article class="registration-card"><div class="registration-card-head"><div><h3 class="registration-card-title">${escapeHTML(application.name)}</h3><div class="registration-card-meta">${escapeHTML(application.mobile)}${application.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(application.aadhaar_last4)}` : ''}${application.emergency_contact ? `<br>Emergency contact: ${escapeHTML(application.emergency_contact)}${application.emergency_contact_relationship ? ` · ${escapeHTML(application.emergency_contact_relationship)}` : ''}` : ''}${application.purpose_of_stay ? `<br>Purpose of stay: ${escapeHTML(application.purpose_of_stay)}` : ''}${application.office_address ? `<br>Workplace/college address: ${escapeHTML(application.office_address)}` : ''}<br>${escapeHTML(application.hostel_name)} · Submitted ${escapeHTML(submitted)} · WhatsApp updates ${application.whatsapp_opt_in ? 'opted in' : 'not opted in'}<br>Rules &amp; regulations: ${termsAccepted}<br>${documents}</div></div>${photoPreview}</div>${approveForm}</article>`;
       }).join('')
       : '<div class="table-empty">No pending applications.</div>';
   }
@@ -704,10 +721,14 @@
   function closeJoinModal() {
     joinModal.hidden = true;
     joinForm.reset();
+    updateJoinConditionalFields();
     $('#amount-due-field').hidden = true;
     $('#amount-due').required = false;
     $('#amount-due').dataset.rateDefault = 'false';
   }
+
+  emergencyContactInput.addEventListener('input', updateJoinConditionalFields);
+  purposeInput.addEventListener('change', updateJoinConditionalFields);
 
   function openRoomChargesModal() {
     renderRoomTypeCharges();

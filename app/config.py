@@ -17,6 +17,7 @@ DOCUMENTS_DIR = DATA_DIR / "documents"
 BACKUPS_DIR = DATA_DIR / "backups"
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
+CRON_SECRET = os.environ.get("CRON_SECRET", "").strip()
 COOKIE_NAME = "hostel_session"
 PLATFORM_COOKIE_NAME = "hostel_platform_session"
 COOKIE_SECURE = os.environ.get("HOSTEL_COOKIE_SECURE", "true" if VERCEL_DEPLOYMENT else "false").lower() == "true"

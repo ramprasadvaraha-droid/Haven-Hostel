@@ -18,13 +18,15 @@
     .field { display: grid; align-content: start; gap: 7px; }
     .field.full { grid-column: 1 / -1; }
     label { font-size: 13px; font-weight: 650; }
-    input { width: 100%; min-height: 42px; padding: 9px 10px; border: 1px solid #d5dad4; border-radius: 5px; font: inherit; }
+    input, select { width: 100%; min-height: 42px; padding: 9px 10px; border: 1px solid #d5dad4; border-radius: 5px; font: inherit; }
     input[type="file"] { padding: 7px; }
     .help, .privacy { margin: 0; color: #6d766e; font-size: 12px; }
     .photo-preview { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #e6e8e1; border-radius: 5px; background: #f7f8f4; }
     .photo-preview img { width: 64px; height: 78px; border-radius: 4px; object-fit: cover; }
     .photo-preview span { color: #526055; font-size: 12px; }
     .terms-section { padding: 16px; border: 1px solid #e6e8e1; border-radius: 6px; background: #fafbf8; }
+    .terms-section summary { color: #2e604a; font-size: 17px; font-weight: 700; cursor: pointer; }
+    .terms-content { display: grid; gap: 12px; padding-top: 12px; }
     .terms-section h2 { margin: 0; color: #2e604a; font-size: 17px; }
     .terms-section h3 { margin: 0; font-size: 13px; letter-spacing: .5px; }
     .terms-list { margin: 0; padding-left: 20px; color: #4f5951; font-size: 12px; line-height: 1.55; }
@@ -51,12 +53,18 @@
       <div class="fields">
         <div class="field full"><label for="guest-name">Full name</label><input id="guest-name" name="name" autocomplete="name" maxlength="80" required></div>
         <div class="field"><label for="guest-mobile">Mobile number</label><input id="guest-mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" minlength="10" maxlength="20" placeholder="10-digit Indian number (defaults to +91)" required></div>
+        <div class="field"><label for="guest-emergency-contact">Emergency contact number <span class="help">(optional)</span></label><input id="guest-emergency-contact" name="emergency_contact" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="10-digit Indian number"></div>
+        <div class="field" id="emergency-relationship-field" hidden><label for="guest-emergency-relationship">Relationship to emergency contact</label><input id="guest-emergency-relationship" name="emergency_contact_relationship" maxlength="80" placeholder="e.g. Parent, spouse, friend"></div>
         <div class="field"><label for="guest-aadhaar">Aadhaar number <span class="help">(optional)</span></label><input id="guest-aadhaar" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off"><span class="help">Optional; if provided, it is encrypted.</span></div>
+        <div class="field"><label for="guest-purpose-of-stay">Purpose of stay <span class="help">(optional)</span></label><select id="guest-purpose-of-stay" name="purpose_of_stay"><option value="">Choose if you wish</option><option value="Work">Work</option><option value="Studies">Studies</option><option value="Other">Other</option></select></div>
+        <div class="field" id="purpose-other-field" hidden><label for="guest-purpose-other">Please describe</label><input id="guest-purpose-other" name="purpose_other" maxlength="120" placeholder="Briefly describe your purpose"></div>
+        <div class="field full"><label for="guest-office-address">Workplace/college address <span class="help">(optional)</span></label><input id="guest-office-address" name="office_address" maxlength="300" autocomplete="street-address" placeholder="Workplace or college address"></div>
         <div class="field"><label for="guest-photo">Person photo</label><input id="guest-photo" name="person_photo" type="file" accept="image/jpeg,image/png,image/webp" required><span class="help">Required. JPEG, PNG, or WebP; up to 5 MB.</span><div class="photo-preview" data-photo-preview-for="guest-photo" hidden><img alt="Selected person photo preview"><span>Check that this is the correct photo before submitting.</span></div></div>
         <div class="field"><label for="aadhaar-photo">Aadhaar photo <span class="help">(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/jpeg,image/png,image/webp"><span class="help">JPEG, PNG, or WebP; up to 5 MB.</span><div class="photo-preview" data-photo-preview-for="aadhaar-photo" hidden><img alt="Selected Aadhaar photo preview"><span>Check that this is the correct image before submitting.</span></div></div>
-        <section class="terms-section field full" aria-labelledby="registration-terms-title">
-          <h2 id="registration-terms-title">JUST FEEL LIKE HOME</h2>
-          <h3>RULES &amp; REGULATIONS</h3>
+        <details class="terms-section field full" aria-labelledby="registration-terms-title" open>
+          <summary id="registration-terms-title">Hostel rules &amp; regulations</summary>
+          <div class="terms-content">
+          <h3>JUST FEEL LIKE HOME</h3>
           <ol class="terms-list">
             <li>Please submit your photo ID and address proof when joining the PG.</li>
             <li>Management is not responsible for residents' personal belongings. Keep valuables such as mobile phones, cash, gold, and laptops safely secured.</li>
@@ -80,10 +88,11 @@
           </ol>
           <input type="hidden" name="terms_version" value="hostel-rules-v1">
           <label class="consent terms-acceptance"><input name="terms_accepted" type="checkbox" value="true" required><span>I have read, understood, and agree to follow these rules and regulations.</span></label>
-        </section>
+          </div>
+        </details>
         <div class="field full">
           <label class="consent"><input name="consent" type="checkbox" required><span>I agree to share these details and any uploaded photos with the hostel owner for registration review.</span></label>
-          <p class="privacy">Your details and photos are stored encrypted. Room assignment and check-in are confirmed by the owner after approval.</p>
+          <p class="privacy">Your details and photos are encrypted at rest and visible only to authorized hostel staff. When the daily Vercel cleanup is configured, active records and stored photos are scheduled for deletion 3 months after check-out; unapproved applications are scheduled for deletion 3 months after submission. Encrypted backups may retain older copies. The owner arranges room assignment and check-in after approval.</p>
         </div>
         <div class="field full">
           <label class="consent"><input name="whatsapp_opt_in" type="checkbox" value="true"><span>Optional: I agree to receive hostel announcements and updates by WhatsApp. I can opt out later.</span></label>

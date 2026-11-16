@@ -4,7 +4,7 @@ import re
 import sqlite3
 import zipfile
 from contextlib import nullcontext
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -12,8 +12,11 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
+import httpx
+
 from app import backup as backup_module
 from app import config, database, main as main_module, storage
+from app import retention as retention_module
 from app.backup import BACKUP_TABLES, create_backup, create_postgres_backup
 from app.database import POSTGRES_SCHEMA, prepare_postgres_statement
 from app.main import app, due_date_after_one_month
@@ -122,7 +125,18 @@ def test_floor_metadata_migration_preserves_existing_layout(tmp_path: Path, monk
             "monthly_rent_paise INTEGER NOT NULL CHECK (monthly_rent_paise >= 0), updated_at TEXT NOT NULL, "
             "PRIMARY KEY (hostel_id, share_count))"
         )
-        connection.execute("DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11)")
+        connection.execute("DROP INDEX IF EXISTS resident_retention_checkout")
+        connection.execute("DROP INDEX IF EXISTS registration_pending_retention")
+        for table in ("residents", "registration_applications"):
+            for column in (
+                "emergency_contact_ciphertext",
+                "emergency_contact_relationship_ciphertext",
+                "purpose_of_stay_ciphertext",
+                "office_address_ciphertext",
+                "retention_purging_at",
+            ):
+                connection.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11, 15, 16)")
     with database.transaction() as connection:
         connection.execute(
             "INSERT INTO staff (id, owner_id, username, password_hash, role, created_at) "
@@ -175,6 +189,17 @@ def test_floor_metadata_migration_preserves_existing_layout(tmp_path: Path, monk
     assert room["ac_type"] == "non_ac"
     assert charge["ac_type"] == "non_ac"
     assert charge["monthly_rent_paise"] == 900000
+    with database.read_connection() as connection:
+        resident_columns = {row[1] for row in connection.execute("PRAGMA table_info(residents)").fetchall()}
+        application_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(registration_applications)").fetchall()
+        }
+        migration = connection.execute("SELECT 1 FROM schema_migrations WHERE version = 16").fetchone()
+    assert "emergency_contact_relationship_ciphertext" in resident_columns
+    assert "retention_purging_at" in resident_columns
+    assert "emergency_contact_relationship_ciphertext" in application_columns
+    assert "retention_purging_at" in application_columns
+    assert migration
 
 
 def test_dashboard_returns_five_latest_checkins_and_checkouts(logged_in_client):
@@ -382,9 +407,20 @@ def test_full_checkin_payment_checkout_and_encrypted_backup(logged_in_client, tm
 
     assert client.get("/api/dashboard").status_code == 200
     assert client.post("/api/session/logout").status_code == 403
+    missing_relationship = client.post(
+        "/api/residents",
+        data=resident_form(emergency_contact="91234 56789"),
+        headers=headers,
+    )
+    assert missing_relationship.status_code == 422
     assert client.post(
         "/api/residents",
-        data=resident_form(),
+        data=resident_form(
+            emergency_contact="91234 56789",
+            emergency_contact_relationship="Parent",
+            purpose_of_stay="Work",
+            office_address="12 Example Road",
+        ),
         files={
             "person_photo": ("person.png", PERSON_PNG, "image/png"),
             "aadhaar_photo": ("aadhaar.png", AADHAAR_PNG, "image/png"),
@@ -399,6 +435,21 @@ def test_full_checkin_payment_checkout_and_encrypted_backup(logged_in_client, tm
     assert resident["bed_number"] == 2
     assert resident["payment_due_date"] == "2026-02-28"
     assert resident["aadhaar_last4"] == "9012"
+    assert resident["emergency_contact"] == "+919123456789"
+    assert resident["emergency_contact_relationship"] == "Parent"
+    assert resident["purpose_of_stay"] == "Work"
+    assert resident["office_address"] == "12 Example Road"
+    with database.read_connection() as connection:
+        stored_resident = connection.execute(
+            "SELECT emergency_contact_ciphertext, emergency_contact_relationship_ciphertext, "
+            "purpose_of_stay_ciphertext, office_address_ciphertext "
+            "FROM residents WHERE id = ?",
+            (resident["id"],),
+        ).fetchone()
+    assert stored_resident["emergency_contact_ciphertext"] != "+919123456789"
+    assert stored_resident["emergency_contact_relationship_ciphertext"] != "Parent"
+    assert stored_resident["purpose_of_stay_ciphertext"] != "Work"
+    assert stored_resident["office_address_ciphertext"] != "12 Example Road"
     assert dashboard["summary"]["capacity"] == 4
     assert dashboard["summary"]["available"] == 3
     assert dashboard["summary"]["outstanding_paise"] == 125050
@@ -463,6 +514,14 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     registration_page = client.get(invite.json()["path"])
     assert registration_page.status_code == 200
     assert 'data-photo-preview-for="guest-photo"' in registration_page.text
+    assert 'name="emergency_contact"' in registration_page.text
+    assert 'name="emergency_contact_relationship"' in registration_page.text
+    assert 'name="purpose_of_stay"' in registration_page.text
+    assert 'name="purpose_other"' in registration_page.text
+    assert 'name="office_address"' in registration_page.text
+    assert "Workplace/college address" in registration_page.text
+    assert "Encrypted backups may retain older copies." in registration_page.text
+    assert "<details class=" in registration_page.text
     assert registration_page.text.count("<li>") == 19
     assert 'name="terms_accepted" type="checkbox" value="true" required' in registration_page.text
     assert client.get(f"/api/join/{token}").json() == {"hostel_name": "Test Hostel"}
@@ -500,13 +559,31 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
         },
     )
     assert outdated_terms.status_code == 409
+    missing_other_details = client.post(
+        f"/api/join/{token}",
+        data={
+            "name": "New Joiner",
+            "mobile": "9876543210",
+            "purpose_of_stay": "Other",
+            "consent": "true",
+            "terms_accepted": "true",
+            "terms_version": "hostel-rules-v1",
+        },
+        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+    )
+    assert missing_other_details.status_code == 422
 
     submitted = client.post(
         f"/api/join/{token}",
         data={
             "name": "New Joiner",
             "mobile": "98765 43210",
+            "emergency_contact": "91234 56789",
+            "emergency_contact_relationship": "Parent",
             "aadhaar": "123456789012",
+            "purpose_of_stay": "Other",
+            "purpose_other": "Volunteer work",
+            "office_address": "45 College Road",
             "consent": "true",
             "terms_accepted": "true",
             "terms_version": "hostel-rules-v1",
@@ -524,6 +601,10 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     application = workspace["applications"][0]
     assert application["name"] == "New Joiner"
     assert application["mobile"] == "+919876543210"
+    assert application["emergency_contact"] == "+919123456789"
+    assert application["emergency_contact_relationship"] == "Parent"
+    assert application["purpose_of_stay"] == "Other: Volunteer work"
+    assert application["office_address"] == "45 College Road"
     assert application["aadhaar_last4"] == "9012"
     assert application["whatsapp_opt_in"] is True
     assert application["terms_accepted_at"]
@@ -536,13 +617,19 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     assert application_preview.headers["cache-control"] == "no-store"
     with database.read_connection() as connection:
         stored_application = connection.execute(
-            "SELECT name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, terms_accepted_at, terms_version "
+            "SELECT name_ciphertext, mobile_ciphertext, emergency_contact_ciphertext, "
+            "emergency_contact_relationship_ciphertext, aadhaar_ciphertext, "
+            "purpose_of_stay_ciphertext, office_address_ciphertext, terms_accepted_at, terms_version "
             "FROM registration_applications WHERE id = ?",
             (application["id"],),
         ).fetchone()
     assert stored_application["name_ciphertext"] != "New Joiner"
     assert stored_application["mobile_ciphertext"] != "+919876543210"
+    assert stored_application["emergency_contact_ciphertext"] != "+919123456789"
+    assert stored_application["emergency_contact_relationship_ciphertext"] != "Parent"
     assert stored_application["aadhaar_ciphertext"] != "123456789012"
+    assert stored_application["purpose_of_stay_ciphertext"] != "Other: Volunteer work"
+    assert stored_application["office_address_ciphertext"] != "45 College Road"
     assert stored_application["terms_accepted_at"] == application["terms_accepted_at"]
     assert stored_application["terms_version"] == "hostel-rules-v1"
 
@@ -567,6 +654,10 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     dashboard = client.get("/api/dashboard").json()
     resident = next(item for item in dashboard["residents"] if item["id"] == approval.json()["resident_id"])
     assert resident["name"] == "New Joiner"
+    assert resident["emergency_contact"] == "+919123456789"
+    assert resident["emergency_contact_relationship"] == "Parent"
+    assert resident["purpose_of_stay"] == "Other: Volunteer work"
+    assert resident["office_address"] == "45 College Road"
     assert resident["room"] == "101"
     assert resident["bed_number"] == 3
     assert resident["whatsapp_opt_in"] is True
@@ -578,6 +669,144 @@ def test_joiner_registration_invite_review_and_approval(logged_in_client):
     assert resident_preview.headers["content-disposition"].startswith("inline")
     assert client.get(resident["documents"][0]["url"]).headers["content-disposition"].startswith("attachment")
     assert client.get("/api/registration-workspace").json()["applications"] == []
+
+
+def test_retention_cron_removes_expired_records_and_documents_but_keeps_backups(
+    logged_in_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    monkeypatch.setattr(config, "CRON_SECRET", "test-cron-secret")
+
+    checkin = client.post(
+        "/api/residents",
+        data=resident_form(payment_status="paid", amount_due=""),
+        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+        headers=headers,
+    )
+    assert checkin.status_code == 201
+    resident_id = checkin.json()["id"]
+    assert client.delete(f"/api/residents/{resident_id}", headers=headers).status_code == 200
+
+    invite = client.post("/api/registration-invites", json={"hostel_id": "test-hostel"}, headers=headers)
+    token = invite.json()["path"].split("/")[-1]
+    application_response = client.post(
+        f"/api/join/{token}",
+        data={
+            "name": "Expired Applicant",
+            "mobile": "9876543210",
+            "consent": "true",
+            "terms_accepted": "true",
+            "terms_version": "hostel-rules-v1",
+        },
+        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+    )
+    assert application_response.status_code == 201
+    application_id = client.get("/api/registration-workspace").json()["applications"][0]["id"]
+
+    expired_at = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+    with database.transaction() as connection:
+        connection.execute("UPDATE residents SET checked_out_at = ? WHERE id = ?", (expired_at, resident_id))
+        connection.execute(
+            "UPDATE registration_applications SET submitted_at = ? WHERE id = ?",
+            (expired_at, application_id),
+        )
+        resident_document = connection.execute(
+            "SELECT id, encrypted_path FROM documents WHERE resident_id = ?",
+            (resident_id,),
+        ).fetchone()
+        application_document = connection.execute(
+            "SELECT person_photo_path, invite_id FROM registration_applications WHERE id = ?",
+            (application_id,),
+        ).fetchone()
+        connection.execute(
+            "INSERT INTO bookings (id, owner_id, hostel_id, phone, phone_hash, status, resident_id, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, 'joined', ?, ?, ?)",
+            ("expired-booking", "admin-id", "test-hostel", "redacted", "hash", resident_id, expired_at, expired_at),
+        )
+        database.write_audit(connection, "admin-id", "booking.joined", "booking", "expired-booking")
+    backup_path = create_backup()
+    resident_file = config.DOCUMENTS_DIR / resident_document["encrypted_path"]
+    application_file = config.DOCUMENTS_DIR / application_document["person_photo_path"]
+
+    assert client.get("/api/cron/retention").status_code == 401
+    remove_document = retention_module.remove_encrypted_document
+
+    def fail_document_deletion(path: str) -> None:
+        raise OSError("Temporary storage failure.")
+
+    monkeypatch.setattr(retention_module, "remove_encrypted_document", fail_document_deletion)
+    failed_cleanup = client.get(
+        "/api/cron/retention",
+        headers={"Authorization": "Bearer test-cron-secret"},
+    )
+    assert failed_cleanup.status_code == 503
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT 1 FROM residents WHERE id = ?", (resident_id,)).fetchone()
+        assert connection.execute(
+            "SELECT 1 FROM registration_applications WHERE id = ?", (application_id,)
+        ).fetchone()
+        assert connection.execute(
+            "SELECT retention_purging_at FROM residents WHERE id = ?", (resident_id,)
+        ).fetchone()["retention_purging_at"] is None
+    monkeypatch.setattr(retention_module, "remove_encrypted_document", remove_document)
+    result = client.get(
+        "/api/cron/retention",
+        headers={"Authorization": "Bearer test-cron-secret"},
+    )
+    assert result.status_code == 200
+    assert result.json()["deleted_residents"] == 1
+    assert result.json()["deleted_pending_applications"] == 1
+    assert result.json()["cleanup_failures"] == 0
+
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT 1 FROM residents WHERE id = ?", (resident_id,)).fetchone() is None
+        assert connection.execute(
+            "SELECT 1 FROM registration_applications WHERE id = ?", (application_id,)
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT 1 FROM registration_invites WHERE id = ?", (application_document["invite_id"],)
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT 1 FROM bookings WHERE id = ?", ("expired-booking",)
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT 1 FROM documents WHERE id = ?", (resident_document["id"],)
+        ).fetchone() is None
+        assert connection.execute(
+            "SELECT 1 FROM audit_log WHERE entity_id IN (?, ?, ?)",
+            (resident_id, application_id, "expired-booking"),
+        ).fetchone() is None
+    assert not resident_file.exists()
+    assert not application_file.exists()
+    assert backup_path.is_file()
+    with zipfile.ZipFile(BytesIO(decrypt_bytes(backup_path.read_bytes()))) as archive:
+        assert resident_id.encode() in archive.read("hostel.sqlite3")
+
+
+def test_remote_encrypted_document_deletion_uses_private_blob_api(monkeypatch: pytest.MonkeyPatch):
+    blob_url = "https://store.private.blob.vercel-storage.com/resident-documents/test.enc"
+    monkeypatch.setattr(config, "BLOB_READ_WRITE_TOKEN", "test-blob-token")
+    requests = []
+
+    def fake_post(url: str, **kwargs):
+        requests.append((url, kwargs))
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(storage.httpx, "post", fake_post)
+    storage.remove_encrypted_document(blob_url)
+
+    assert len(requests) == 1
+    url, options = requests[0]
+    assert url == f"{storage.BLOB_API}/delete"
+    assert options["json"] == {"urls": [blob_url]}
+    assert options["headers"]["Authorization"] == "Bearer test-blob-token"
+
+
+def test_retention_cutoff_uses_three_calendar_months():
+    current = datetime(2026, 5, 31, 3, 0, tzinfo=timezone.utc)
+    assert retention_module._three_months_before(current) == datetime(2026, 2, 28, 3, 0, tzinfo=timezone.utc)
 
 
 def test_whatsapp_broadcast_requires_template_configuration(logged_in_client, monkeypatch: pytest.MonkeyPatch):

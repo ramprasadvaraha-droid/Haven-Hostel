@@ -4,6 +4,23 @@
   const submit = form.querySelector('button[type="submit"]');
   const token = window.location.pathname.split('/').pop();
   const previewUrls = new Map();
+  const emergencyContact = form.querySelector('[name="emergency_contact"]');
+  const emergencyRelationship = form.querySelector('[name="emergency_contact_relationship"]');
+  const emergencyRelationshipField = form.querySelector('#emergency-relationship-field');
+  const purpose = form.querySelector('[name="purpose_of_stay"]');
+  const purposeOther = form.querySelector('[name="purpose_other"]');
+  const purposeOtherField = form.querySelector('#purpose-other-field');
+
+  function updateConditionalFields() {
+    const hasEmergencyContact = Boolean(emergencyContact.value.trim());
+    emergencyRelationshipField.hidden = !hasEmergencyContact;
+    emergencyRelationship.required = hasEmergencyContact;
+    if (!hasEmergencyContact) emergencyRelationship.value = '';
+    const hasOtherPurpose = purpose.value === 'Other';
+    purposeOtherField.hidden = !hasOtherPurpose;
+    purposeOther.required = hasOtherPurpose;
+    if (!hasOtherPurpose) purposeOther.value = '';
+  }
 
   function clearPhotoPreview(input, preview) {
     const previousUrl = previewUrls.get(input.id);
@@ -31,6 +48,12 @@
       clearPhotoPreview(input, form.querySelector(`[data-photo-preview-for="${input.id}"]`));
     }
   }
+
+  emergencyContact.addEventListener('input', updateConditionalFields);
+  purpose.addEventListener('change', updateConditionalFields);
+  form.querySelector('[name="terms_accepted"]').addEventListener('invalid', () => {
+    form.querySelector('.terms-section').open = true;
+  });
 
   function showMessage(text, isError = false) {
     message.textContent = text;
@@ -71,9 +94,10 @@
       const response = await fetch(`/api/join/${encodeURIComponent(token)}`, { method: 'POST', body });
       if (!response.ok) throw new Error(await responseError(response));
       form.reset();
+      updateConditionalFields();
       clearPhotoPreviews();
       form.hidden = true;
-      showMessage('Your registration was submitted. The hostel owner will review it and arrange your room and check-in if approved.');
+      showMessage('Your registration was submitted. The hostel owner will review it and arrange your room and check-in if approved. Contact the hostel owner directly if you need an update; no fixed response time is promised.');
     } catch (error) {
       showMessage(error.message, true);
     } finally {
@@ -82,5 +106,6 @@
   });
 
   window.addEventListener('beforeunload', clearPhotoPreviews);
+  updateConditionalFields();
   loadInvitation();
 })();

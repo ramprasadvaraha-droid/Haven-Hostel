@@ -33,6 +33,7 @@ from app.storage import (
     remove_local_encrypted_document,
     save_encrypted_document,
 )
+from app.retention import purge_expired_records
 
 
 IMAGE_SIGNATURES = {
@@ -253,6 +254,28 @@ def registration_page(token: str) -> FileResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/cron/retention")
+def run_retention_cleanup(request: Request) -> dict[str, object]:
+    if not config.CRON_SECRET:
+        raise HTTPException(status_code=503, detail="CRON_SECRET is not configured.")
+    if not hmac.compare_digest(
+        request.headers.get("authorization", ""),
+        f"Bearer {config.CRON_SECRET}",
+    ):
+        raise HTTPException(status_code=401, detail="Invalid cron authorization.")
+    result = purge_expired_records()
+    if result["cleanup_failures"]:
+        logger.error(
+            "Retention cleanup left %s expired record(s) pending document deletion.",
+            result["cleanup_failures"],
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Some expired documents could not be deleted; the next scheduled run will retry.",
+        )
+    return result
 
 
 def is_loopback_request(request: Request) -> bool:
@@ -784,7 +807,19 @@ def serialize_resident(row: sqlite3.Row, documents: list[dict[str, str]]) -> dic
         "id": row["id"],
         "name": decrypt_text(row["name_ciphertext"]),
         "mobile": decrypt_text(row["mobile_ciphertext"]),
+        "emergency_contact": decrypt_text(row["emergency_contact_ciphertext"])
+        if row["emergency_contact_ciphertext"]
+        else "",
+        "emergency_contact_relationship": decrypt_text(row["emergency_contact_relationship_ciphertext"])
+        if row["emergency_contact_relationship_ciphertext"]
+        else "",
         "aadhaar_last4": aadhaar[-4:] if aadhaar else "",
+        "purpose_of_stay": decrypt_text(row["purpose_of_stay_ciphertext"])
+        if row["purpose_of_stay_ciphertext"]
+        else "",
+        "office_address": decrypt_text(row["office_address_ciphertext"])
+        if row["office_address_ciphertext"]
+        else "",
         "room_id": row["room_id"],
         "room": row["room_number"],
         "hostel_id": row["hostel_id"],
@@ -1880,6 +1915,20 @@ def _normalize_phone(phone: str) -> str:
     return normalized
 
 
+def _validated_purpose_of_stay(category: str, other_details: str) -> str:
+    if category in {"Work", "Studies"}:
+        if other_details:
+            raise HTTPException(status_code=422, detail="Only enter other details when purpose is Other.")
+        return category
+    if category == "Other":
+        if not other_details:
+            raise HTTPException(status_code=422, detail="Describe the purpose of stay.")
+        return f"Other: {other_details}"
+    if category or other_details:
+        raise HTTPException(status_code=422, detail="Choose Work, Studies, or Other as the purpose of stay.")
+    return ""
+
+
 def _whatsapp_recipient_number(phone: str) -> str:
     digits = re.sub(r"\D", "", _normalize_phone(phone))
     if len(digits) == 10:
@@ -2678,7 +2727,8 @@ def registration_workspace(staff: dict[str, str] = Depends(require_admin_read)) 
         application_rows = connection.execute(
             "SELECT application.*, hostel.name AS hostel_name FROM registration_applications application "
             "JOIN hostels hostel ON hostel.id = application.hostel_id "
-            "WHERE application.status = 'pending' AND hostel.owner_id = ? "
+            "WHERE application.status = 'pending' AND application.retention_purging_at IS NULL "
+            "AND hostel.owner_id = ? "
             "ORDER BY application.submitted_at",
             (staff["owner_id"],),
         ).fetchall()
@@ -2707,7 +2757,21 @@ def registration_workspace(staff: dict[str, str] = Depends(require_admin_read)) 
                 "id": row["id"],
                 "name": decrypt_text(row["name_ciphertext"]),
                 "mobile": decrypt_text(row["mobile_ciphertext"]),
+                "emergency_contact": decrypt_text(row["emergency_contact_ciphertext"])
+                if row["emergency_contact_ciphertext"]
+                else "",
+                "emergency_contact_relationship": decrypt_text(
+                    row["emergency_contact_relationship_ciphertext"]
+                )
+                if row["emergency_contact_relationship_ciphertext"]
+                else "",
                 "aadhaar_last4": aadhaar[-4:] if aadhaar else "",
+                "purpose_of_stay": decrypt_text(row["purpose_of_stay_ciphertext"])
+                if row["purpose_of_stay_ciphertext"]
+                else "",
+                "office_address": decrypt_text(row["office_address_ciphertext"])
+                if row["office_address_ciphertext"]
+                else "",
                 "hostel_id": row["hostel_id"],
                 "hostel_name": row["hostel_name"],
                 "whatsapp_opt_in": bool(row["whatsapp_opt_in"]),
@@ -2826,7 +2890,12 @@ async def submit_join_registration(
     token: str,
     name: str = Form(min_length=1, max_length=80),
     mobile: str = Form(min_length=10, max_length=20),
+    emergency_contact: str = Form(default="", max_length=20),
+    emergency_contact_relationship: str = Form(default="", max_length=80),
     aadhaar: str = Form(default="", max_length=14),
+    purpose_of_stay: str = Form(default="", max_length=120),
+    purpose_other: str = Form(default="", max_length=120),
+    office_address: str = Form(default="", max_length=300),
     consent: str = Form(),
     terms_accepted: str = Form(default=""),
     terms_version: str = Form(default=""),
@@ -2836,9 +2905,20 @@ async def submit_join_registration(
 ) -> dict[str, str]:
     invite = active_registration_invite(token)
     name, mobile = name.strip(), mobile.strip()
+    emergency_contact = emergency_contact.strip()
+    emergency_contact_relationship = emergency_contact_relationship.strip()
+    purpose_of_stay, purpose_other = purpose_of_stay.strip(), purpose_other.strip()
+    office_address = office_address.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Enter a valid full name.")
     normalized_mobile = _normalize_phone(mobile)
+    normalized_emergency_contact = _normalize_phone(emergency_contact) if emergency_contact else ""
+    if bool(normalized_emergency_contact) != bool(emergency_contact_relationship):
+        raise HTTPException(
+            status_code=422,
+            detail="Enter the relationship for the emergency contact number.",
+        )
+    purpose_of_stay = _validated_purpose_of_stay(purpose_of_stay, purpose_other)
     normalized_aadhaar = re.sub(r"\s", "", aadhaar)
     if normalized_aadhaar and not re.fullmatch(r"[0-9]{12}", normalized_aadhaar):
         raise HTTPException(status_code=422, detail="Aadhaar must contain 12 digits when provided.")
@@ -2873,17 +2953,23 @@ async def submit_join_registration(
                 raise HTTPException(status_code=410, detail="This registration link has expired or was already used.")
             connection.execute(
                 "INSERT INTO registration_applications "
-                "(id, invite_id, hostel_id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, whatsapp_opt_in, "
+                "(id, invite_id, hostel_id, name_ciphertext, mobile_ciphertext, emergency_contact_ciphertext, "
+                "emergency_contact_relationship_ciphertext, "
+                "aadhaar_ciphertext, purpose_of_stay_ciphertext, office_address_ciphertext, whatsapp_opt_in, "
                 "terms_accepted_at, terms_version, "
                 "person_photo_path, person_photo_media_type, aadhaar_photo_path, aadhaar_photo_media_type, submitted_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     application_id,
                     invite["id"],
                     invite["hostel_id"],
                     encrypt_text(name),
                     encrypt_text(normalized_mobile),
+                    encrypt_text(normalized_emergency_contact) if normalized_emergency_contact else None,
+                    encrypt_text(emergency_contact_relationship) if emergency_contact_relationship else None,
                     encrypt_text(normalized_aadhaar) if normalized_aadhaar else None,
+                    encrypt_text(purpose_of_stay) if purpose_of_stay else None,
+                    encrypt_text(office_address) if office_address else None,
                     int(whatsapp_opt_in),
                     now,
                     REGISTRATION_TERMS_VERSION,
@@ -2935,7 +3021,8 @@ def download_registration_document(
             f"SELECT application.{path_column} AS encrypted_path, "
             f"application.{media_type_column} AS media_type FROM registration_applications application "
             "JOIN hostels hostel ON hostel.id = application.hostel_id "
-            "WHERE application.id = ? AND hostel.owner_id = ? AND application.status = 'pending'",
+            "WHERE application.id = ? AND hostel.owner_id = ? AND application.status = 'pending' "
+            "AND application.retention_purging_at IS NULL",
             (application_id, staff["owner_id"]),
         ).fetchone()
         if not row or not row["encrypted_path"]:
@@ -2982,14 +3069,15 @@ def approve_registration_application(
         application = connection.execute(
             "SELECT application.*, hostel.owner_id FROM registration_applications application "
             "JOIN hostels hostel ON hostel.id = application.hostel_id "
-            "WHERE application.id = ? AND application.status = 'pending' AND hostel.owner_id = ?",
+            "WHERE application.id = ? AND application.status = 'pending' "
+            "AND application.retention_purging_at IS NULL AND hostel.owner_id = ?",
             (application_id, staff["owner_id"]),
         ).fetchone()
         if not application:
             raise HTTPException(status_code=404, detail="Pending registration application not found.")
         claimed = connection.execute(
             "UPDATE registration_applications SET status = 'approved', reviewed_at = ?, reviewed_by = ? "
-            "WHERE id = ? AND status = 'pending'",
+            "WHERE id = ? AND status = 'pending' AND retention_purging_at IS NULL",
             (now, staff["id"], application_id),
         )
         if claimed.rowcount != 1:
@@ -3021,14 +3109,20 @@ def approve_registration_application(
             raise HTTPException(status_code=409, detail="That bed is already occupied. Choose another bed.")
         name = decrypt_text(application["name_ciphertext"])
         connection.execute(
-            "INSERT INTO residents (id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, room_id, "
-            "bed_number, joining_date, payment_due_date, payment_status, amount_due_paise, whatsapp_opt_in, "
-            "created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO residents (id, name_ciphertext, mobile_ciphertext, emergency_contact_ciphertext, "
+            "emergency_contact_relationship_ciphertext, "
+            "aadhaar_ciphertext, purpose_of_stay_ciphertext, office_address_ciphertext, room_id, bed_number, "
+            "joining_date, payment_due_date, payment_status, amount_due_paise, whatsapp_opt_in, created_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 resident_id,
                 application["name_ciphertext"],
                 application["mobile_ciphertext"],
+                application["emergency_contact_ciphertext"],
+                application["emergency_contact_relationship_ciphertext"],
                 application["aadhaar_ciphertext"],
+                application["purpose_of_stay_ciphertext"],
+                application["office_address_ciphertext"],
                 payload.room_id,
                 payload.bed_number,
                 joined.isoformat(),
@@ -3103,7 +3197,12 @@ def approve_registration_application(
 async def create_resident(
     name: str = Form(min_length=1, max_length=80),
     mobile: str = Form(min_length=10, max_length=20),
+    emergency_contact: str = Form(default="", max_length=20),
+    emergency_contact_relationship: str = Form(default="", max_length=80),
     aadhaar: str = Form(default="", max_length=14),
+    purpose_of_stay: str = Form(default="", max_length=120),
+    purpose_other: str = Form(default="", max_length=120),
+    office_address: str = Form(default="", max_length=300),
     room: str = Form(min_length=1, max_length=64),
     bed_number: int = Form(ge=1, le=20),
     joining_date: str = Form(),
@@ -3115,9 +3214,20 @@ async def create_resident(
     staff: dict[str, str] = Depends(require_write),
 ) -> dict[str, str]:
     name, mobile = name.strip(), mobile.strip()
+    emergency_contact = emergency_contact.strip()
+    emergency_contact_relationship = emergency_contact_relationship.strip()
+    purpose_of_stay, purpose_other = purpose_of_stay.strip(), purpose_other.strip()
+    office_address = office_address.strip()
     if not name or len(name) > 80:
         raise HTTPException(status_code=422, detail="Enter a valid full name.")
     normalized_mobile = _normalize_phone(mobile)
+    normalized_emergency_contact = _normalize_phone(emergency_contact) if emergency_contact else ""
+    if bool(normalized_emergency_contact) != bool(emergency_contact_relationship):
+        raise HTTPException(
+            status_code=422,
+            detail="Enter the relationship for the emergency contact number.",
+        )
+    purpose_of_stay = _validated_purpose_of_stay(purpose_of_stay, purpose_other)
     normalized_aadhaar = re.sub(r"\s", "", aadhaar)
     if normalized_aadhaar and not re.fullmatch(r"[0-9]{12}", normalized_aadhaar):
         raise HTTPException(status_code=422, detail="Aadhaar must contain 12 digits when provided.")
@@ -3157,14 +3267,20 @@ async def create_resident(
             if bed_number > room_record["share_count"]:
                 raise HTTPException(status_code=422, detail="That bed number exceeds this room's sharing capacity.")
             connection.execute(
-                "INSERT INTO residents (id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, room_id, "
-                "bed_number, joining_date, payment_due_date, payment_status, amount_due_paise, whatsapp_opt_in, "
-                "created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO residents (id, name_ciphertext, mobile_ciphertext, emergency_contact_ciphertext, "
+                "emergency_contact_relationship_ciphertext, "
+                "aadhaar_ciphertext, purpose_of_stay_ciphertext, office_address_ciphertext, room_id, bed_number, "
+                "joining_date, payment_due_date, payment_status, amount_due_paise, whatsapp_opt_in, created_by, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     resident_id,
                     encrypt_text(name),
                     encrypt_text(normalized_mobile),
+                    encrypt_text(normalized_emergency_contact) if normalized_emergency_contact else None,
+                    encrypt_text(emergency_contact_relationship) if emergency_contact_relationship else None,
                     encrypt_text(normalized_aadhaar) if normalized_aadhaar else None,
+                    encrypt_text(purpose_of_stay) if purpose_of_stay else None,
+                    encrypt_text(office_address) if office_address else None,
                     room,
                     bed_number,
                     joined.isoformat(),
@@ -3419,7 +3535,7 @@ def download_document(
             "JOIN residents resident ON resident.id = document.resident_id "
             "JOIN rooms room ON room.id = resident.room_id JOIN floors floor ON floor.id = room.floor_id "
             "JOIN hostels hostel ON hostel.id = floor.hostel_id "
-            "WHERE document.id = ? AND hostel.owner_id = ?",
+            "WHERE document.id = ? AND hostel.owner_id = ? AND resident.retention_purging_at IS NULL",
             (document_id, staff["owner_id"]),
         ).fetchone()
         if not row:

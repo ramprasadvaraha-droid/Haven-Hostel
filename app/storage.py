@@ -103,3 +103,27 @@ def remove_local_encrypted_document(location: str) -> None:
     filename = Path(location)
     if filename.name == location and filename.suffix == ".enc":
         (config.DOCUMENTS_DIR / filename).unlink(missing_ok=True)
+
+
+def remove_encrypted_document(location: str) -> None:
+    if location.startswith("https://"):
+        if not config.BLOB_READ_WRITE_TOKEN:
+            raise RuntimeError("BLOB_READ_WRITE_TOKEN is required for Vercel Blob storage.")
+        response = httpx.post(
+            f"{BLOB_API}/delete",
+            json={"urls": [validate_blob_url(location)]},
+            headers={
+                "Authorization": f"Bearer {config.BLOB_READ_WRITE_TOKEN}",
+                "x-api-version": "13",
+            },
+            timeout=15,
+        )
+        response.raise_for_status()
+        return
+    filename = Path(location)
+    if filename.name != location or filename.suffix != ".enc":
+        raise ValueError("Stored file path is invalid.")
+    document_path = config.DOCUMENTS_DIR / filename
+    if document_path.parent != config.DOCUMENTS_DIR:
+        raise ValueError("Stored file path is invalid.")
+    document_path.unlink(missing_ok=True)
