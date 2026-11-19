@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from email.message import EmailMessage
 from io import BytesIO
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
@@ -801,6 +802,13 @@ async def read_optional_image(upload: UploadFile | None, label: str) -> tuple[by
     return contents, media_type
 
 
+async def read_required_image(upload: UploadFile, label: str) -> tuple[bytes, str]:
+    image = await read_optional_image(upload, label)
+    if image is None:
+        raise HTTPException(status_code=422, detail=f"{label} is required.")
+    return image
+
+
 def serialize_resident(row: sqlite3.Row, documents: list[dict[str, str]]) -> dict[str, object]:
     aadhaar = decrypt_text(row["aadhaar_ciphertext"]) if row["aadhaar_ciphertext"] else ""
     return {
@@ -1046,6 +1054,51 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
         "activity": activity,
         "bookings": booking_data,
     }
+
+
+@app.get("/api/residents/{resident_id}")
+def resident_details(
+    resident_id: str,
+    staff: dict[str, str] = Depends(current_staff),
+) -> dict[str, object]:
+    with database.transaction() as connection:
+        row = connection.execute(
+            "SELECT resident.*, room.room_number, floor.floor_number, hostel.id AS hostel_id, "
+            "hostel.name AS hostel_name, "
+            "(SELECT MAX(application.terms_accepted_at) FROM registration_applications application "
+            "WHERE application.resident_id = resident.id) AS terms_accepted_at "
+            "FROM residents resident JOIN rooms room ON room.id = resident.room_id "
+            "JOIN floors floor ON floor.id = room.floor_id JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE resident.id = ? AND resident.checked_out_at IS NULL AND hostel.owner_id = ?",
+            (resident_id, staff["owner_id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Active resident not found.")
+        document_rows = connection.execute(
+            "SELECT id, kind FROM documents WHERE resident_id = ? "
+            "ORDER BY CASE kind WHEN 'person_photo' THEN 0 ELSE 1 END",
+            (resident_id,),
+        ).fetchall()
+        database.write_audit(
+            connection,
+            staff["id"],
+            "resident.details_view",
+            "resident",
+            resident_id,
+            {},
+        )
+
+    documents = [
+        {
+            "kind": document["kind"],
+            "url": f"/api/documents/{document['id']}",
+            "preview_url": f"/api/documents/{document['id']}?inline=true",
+        }
+        for document in document_rows
+    ]
+    details = serialize_resident(row, documents)
+    details["aadhaar"] = decrypt_text(row["aadhaar_ciphertext"]) if row["aadhaar_ciphertext"] else ""
+    return details
 
 
 @app.put("/api/hostels/{hostel_id}/room-charges")
@@ -2523,6 +2576,16 @@ async def _send_whatsapp_template_message(to: str, message: str) -> None:
         response.raise_for_status()
 
 
+def _payment_reminder_message(recipient: sqlite3.Row) -> str:
+    due_date = date.fromisoformat(recipient["payment_due_date"]).strftime("%d %b %Y").lstrip("0")
+    amount = Decimal(recipient["amount_due_paise"]) / 100
+    return (
+        f"Hello {decrypt_text(recipient['name_ciphertext'])}, our records show an outstanding hostel payment of "
+        f"₹{amount:,.2f}, due on {due_date}. Please complete payment at your earliest convenience. "
+        f"If you have already paid, please disregard this reminder. Thank you, {recipient['hostel_name']}."
+    )
+
+
 @app.get("/api/webhook/whatsapp")
 def verify_whatsapp_webhook(
     hub_mode: str | None = Query(default=None, alias="hub.mode"),
@@ -3197,20 +3260,20 @@ def approve_registration_application(
 async def create_resident(
     name: str = Form(min_length=1, max_length=80),
     mobile: str = Form(min_length=10, max_length=20),
-    emergency_contact: str = Form(default="", max_length=20),
-    emergency_contact_relationship: str = Form(default="", max_length=80),
-    aadhaar: str = Form(default="", max_length=14),
-    purpose_of_stay: str = Form(default="", max_length=120),
+    emergency_contact: str = Form(min_length=10, max_length=20),
+    emergency_contact_relationship: str = Form(min_length=1, max_length=80),
+    aadhaar: str = Form(min_length=12, max_length=14),
+    purpose_of_stay: str = Form(min_length=1, max_length=120),
     purpose_other: str = Form(default="", max_length=120),
-    office_address: str = Form(default="", max_length=300),
+    office_address: str = Form(min_length=1, max_length=300),
     room: str = Form(min_length=1, max_length=64),
     bed_number: int = Form(ge=1, le=20),
     joining_date: str = Form(),
     payment_status: Literal["paid", "unpaid"] = Form(),
     amount_due: str = Form(default=""),
     whatsapp_opt_in: bool = Form(default=False),
-    person_photo: UploadFile | None = File(default=None),
-    aadhaar_photo: UploadFile | None = File(default=None),
+    person_photo: UploadFile = File(...),
+    aadhaar_photo: UploadFile = File(...),
     staff: dict[str, str] = Depends(require_write),
 ) -> dict[str, str]:
     name, mobile = name.strip(), mobile.strip()
@@ -3222,23 +3285,27 @@ async def create_resident(
         raise HTTPException(status_code=422, detail="Enter a valid full name.")
     normalized_mobile = _normalize_phone(mobile)
     normalized_emergency_contact = _normalize_phone(emergency_contact) if emergency_contact else ""
-    if bool(normalized_emergency_contact) != bool(emergency_contact_relationship):
+    if not normalized_emergency_contact or not emergency_contact_relationship:
         raise HTTPException(
             status_code=422,
-            detail="Enter the relationship for the emergency contact number.",
+            detail="Enter an emergency contact number and relationship.",
         )
     purpose_of_stay = _validated_purpose_of_stay(purpose_of_stay, purpose_other)
+    if not purpose_of_stay:
+        raise HTTPException(status_code=422, detail="Choose a purpose of stay.")
     normalized_aadhaar = re.sub(r"\s", "", aadhaar)
-    if normalized_aadhaar and not re.fullmatch(r"[0-9]{12}", normalized_aadhaar):
-        raise HTTPException(status_code=422, detail="Aadhaar must contain 12 digits when provided.")
+    if not re.fullmatch(r"[0-9]{12}", normalized_aadhaar):
+        raise HTTPException(status_code=422, detail="Aadhaar must contain 12 digits.")
+    if not office_address:
+        raise HTTPException(status_code=422, detail="Enter the workplace or college address.")
     joined = parse_date(joining_date, "joining date")
     payment_due = due_date_after_one_month(joined)
     amount_due_paise = amount_to_paise(amount_due) if payment_status == "unpaid" else 0
     if payment_status == "paid" and amount_due.strip():
         raise HTTPException(status_code=422, detail="A paid resident cannot have an outstanding balance.")
 
-    person_image = await read_optional_image(person_photo, "Person photo")
-    aadhaar_image = await read_optional_image(aadhaar_photo, "Aadhaar photo")
+    person_image = await read_required_image(person_photo, "Person photo")
+    aadhaar_image = await read_required_image(aadhaar_photo, "Aadhaar photo")
     resident_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
     stored_documents: list[tuple[str, str, str]] = []
@@ -3458,6 +3525,106 @@ async def send_whatsapp_broadcast(
     return {
         "recipient_count": len(recipients),
         "sent_count": sent_count,
+        "failed_count": len(failed_residents),
+        "failed_residents": failed_residents,
+    }
+
+
+@app.post("/api/whatsapp/payment-reminders")
+async def send_whatsapp_payment_reminders(
+    staff: dict[str, str] = Depends(require_admin),
+) -> dict[str, object]:
+    if not config.WHATSAPP_ACCESS_TOKEN or not config.WHATSAPP_PHONE_NUMBER_ID:
+        raise HTTPException(status_code=503, detail="WhatsApp Cloud API credentials are not configured.")
+    if not config.WHATSAPP_BROADCAST_TEMPLATE:
+        raise HTTPException(
+            status_code=503,
+            detail="An approved WhatsApp broadcast template must be configured before sending.",
+        )
+
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    cooldown_cutoff = (today - timedelta(days=1)).isoformat()
+    sent_date = today.isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    with database.transaction() as connection:
+        eligible = connection.execute(
+            "SELECT resident.id, resident.name_ciphertext, resident.mobile_ciphertext, "
+            "resident.payment_due_date, resident.amount_due_paise, hostel.name AS hostel_name "
+            "FROM residents resident JOIN rooms room ON room.id = resident.room_id "
+            "JOIN floors floor ON floor.id = room.floor_id JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE hostel.owner_id = ? AND hostel.active = 1 AND resident.checked_out_at IS NULL "
+            "AND resident.payment_status = 'unpaid' AND resident.amount_due_paise > 0 "
+            "AND resident.whatsapp_opt_in = 1 ORDER BY resident.created_at",
+            (staff["owner_id"],),
+        ).fetchall()
+        candidates = connection.execute(
+            "SELECT resident.id, resident.name_ciphertext, resident.mobile_ciphertext, "
+            "resident.payment_due_date, resident.amount_due_paise, hostel.name AS hostel_name "
+            "FROM residents resident JOIN rooms room ON room.id = resident.room_id "
+            "JOIN floors floor ON floor.id = room.floor_id JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE hostel.owner_id = ? AND hostel.active = 1 AND resident.checked_out_at IS NULL "
+            "AND resident.payment_status = 'unpaid' AND resident.amount_due_paise > 0 "
+            "AND resident.whatsapp_opt_in = 1 "
+            "AND NOT EXISTS (SELECT 1 FROM whatsapp_payment_reminders reminder "
+            "WHERE reminder.resident_id = resident.id AND reminder.sent_date >= ?) "
+            "ORDER BY resident.created_at",
+            (staff["owner_id"], cooldown_cutoff),
+        ).fetchall()
+        recipients = []
+        for candidate in candidates:
+            reservation = connection.execute(
+                "INSERT OR IGNORE INTO whatsapp_payment_reminders (resident_id, sent_date, created_at) "
+                "VALUES (?, ?, ?)",
+                (candidate["id"], sent_date, now),
+            )
+            if reservation.rowcount:
+                recipients.append(candidate)
+
+    semaphore = asyncio.Semaphore(5)
+
+    async def send_one(recipient: sqlite3.Row) -> tuple[bool, dict[str, str] | None]:
+        try:
+            async with semaphore:
+                await _send_whatsapp_template_message(
+                    _whatsapp_recipient_number(decrypt_text(recipient["mobile_ciphertext"])),
+                    _payment_reminder_message(recipient),
+                )
+        except (httpx.HTTPError, HTTPException) as error:
+            logger.warning(
+                "WhatsApp payment reminder delivery failed for resident %s (%s).",
+                recipient["id"],
+                type(error).__name__,
+            )
+            with database.transaction() as connection:
+                connection.execute(
+                    "DELETE FROM whatsapp_payment_reminders WHERE resident_id = ? AND sent_date = ?",
+                    (recipient["id"], sent_date),
+                )
+            return False, {"id": recipient["id"], "name": decrypt_text(recipient["name_ciphertext"])}
+        return True, None
+
+    delivery_results = await asyncio.gather(*(send_one(recipient) for recipient in recipients))
+    failed_residents = [failure for sent, failure in delivery_results if not sent and failure]
+    sent_count = len(delivery_results) - len(failed_residents)
+    skipped_count = len(eligible) - len(recipients)
+    with database.transaction() as connection:
+        database.write_audit(
+            connection,
+            staff["id"],
+            "whatsapp.payment_reminders",
+            "staff",
+            staff["owner_id"],
+            {
+                "eligible_count": len(eligible),
+                "sent_count": sent_count,
+                "skipped_count": skipped_count,
+                "failed_count": len(failed_residents),
+            },
+        )
+    return {
+        "eligible_count": len(eligible),
+        "sent_count": sent_count,
+        "skipped_count": skipped_count,
         "failed_count": len(failed_residents),
         "failed_residents": failed_residents,
     }

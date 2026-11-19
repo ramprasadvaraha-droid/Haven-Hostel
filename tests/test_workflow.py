@@ -76,7 +76,11 @@ def resident_form(**overrides: str) -> dict[str, str]:
     form = {
         "name": "Asha Resident",
         "mobile": "+919876543210",
+        "emergency_contact": "9876543211",
+        "emergency_contact_relationship": "Parent",
         "aadhaar": "123456789012",
+        "purpose_of_stay": "Work",
+        "office_address": "12 Example Road",
         "room": "room-101",
         "bed_number": "2",
         "joining_date": "2026-01-31",
@@ -85,6 +89,13 @@ def resident_form(**overrides: str) -> dict[str, str]:
     }
     form.update(overrides)
     return form
+
+
+def resident_uploads() -> dict[str, tuple[str, bytes, str]]:
+    return {
+        "person_photo": ("person.png", PERSON_PNG, "image/png"),
+        "aadhaar_photo": ("aadhaar.png", AADHAAR_PNG, "image/png"),
+    }
 
 
 def login_platform(client: TestClient) -> str:
@@ -314,7 +325,7 @@ def test_vercel_document_upload_fails_closed_without_persistent_storage(
     response = client.post(
         "/api/residents",
         data=resident_form(),
-        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+        files=resident_uploads(),
         headers={"X-CSRF-Token": csrf},
     )
 
@@ -409,7 +420,11 @@ def test_full_checkin_payment_checkout_and_encrypted_backup(logged_in_client, tm
     assert client.post("/api/session/logout").status_code == 403
     missing_relationship = client.post(
         "/api/residents",
-        data=resident_form(emergency_contact="91234 56789"),
+        data=resident_form(
+            emergency_contact="91234 56789",
+            emergency_contact_relationship="",
+        ),
+        files=resident_uploads(),
         headers=headers,
     )
     assert missing_relationship.status_code == 422
@@ -435,6 +450,10 @@ def test_full_checkin_payment_checkout_and_encrypted_backup(logged_in_client, tm
     assert resident["bed_number"] == 2
     assert resident["payment_due_date"] == "2026-02-28"
     assert resident["aadhaar_last4"] == "9012"
+    assert "aadhaar" not in resident
+    details = client.get(f"/api/residents/{resident['id']}")
+    assert details.status_code == 200
+    assert details.json()["aadhaar"] == "123456789012"
     assert resident["emergency_contact"] == "+919123456789"
     assert resident["emergency_contact_relationship"] == "Parent"
     assert resident["purpose_of_stay"] == "Work"
@@ -455,7 +474,12 @@ def test_full_checkin_payment_checkout_and_encrypted_backup(logged_in_client, tm
     assert dashboard["summary"]["outstanding_paise"] == 125050
     assert [document["kind"] for document in resident["documents"]] == ["person_photo", "aadhaar_photo"]
 
-    conflict = client.post("/api/residents", data=resident_form(aadhaar="", payment_status="paid", amount_due=""), headers=headers)
+    conflict = client.post(
+        "/api/residents",
+        data=resident_form(payment_status="paid", amount_due=""),
+        files=resident_uploads(),
+        headers=headers,
+    )
     assert conflict.status_code == 409
 
     for document in resident["documents"]:
@@ -499,6 +523,38 @@ def test_full_checkin_payment_checkout_and_encrypted_backup(logged_in_client, tm
         assert "hostel.sqlite3" in archive.namelist()
         assert len([name for name in archive.namelist() if name.startswith("documents/")]) == 2
         assert b"123456789012" not in archive.read("hostel.sqlite3")
+
+
+def test_add_resident_requires_all_details_and_both_photos(logged_in_client):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+
+    for field in (
+        "emergency_contact",
+        "emergency_contact_relationship",
+        "aadhaar",
+        "purpose_of_stay",
+        "office_address",
+    ):
+        missing_detail = client.post(
+            "/api/residents",
+            data=resident_form(**{field: ""}),
+            files=resident_uploads(),
+            headers=headers,
+        )
+        assert missing_detail.status_code == 422
+
+    for missing_photo, provided_photo in (
+        ("person_photo", "aadhaar_photo"),
+        ("aadhaar_photo", "person_photo"),
+    ):
+        missing_upload = client.post(
+            "/api/residents",
+            data=resident_form(),
+            files={provided_photo: resident_uploads()[provided_photo]},
+            headers=headers,
+        )
+        assert missing_upload.status_code == 422
 
 
 def test_joiner_registration_invite_review_and_approval(logged_in_client):
@@ -682,7 +738,7 @@ def test_retention_cron_removes_expired_records_and_documents_but_keeps_backups(
     checkin = client.post(
         "/api/residents",
         data=resident_form(payment_status="paid", amount_due=""),
-        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+        files=resident_uploads(),
         headers=headers,
     )
     assert checkin.status_code == 201
@@ -833,6 +889,7 @@ def test_resident_whatsapp_consent_can_be_recorded_and_withdrawn(logged_in_clien
     resident_response = client.post(
         "/api/residents",
         data=resident_form(mobile="9876543210", whatsapp_opt_in="false"),
+        files=resident_uploads(),
         headers=headers,
     )
     assert resident_response.status_code == 201
@@ -876,6 +933,7 @@ def test_whatsapp_broadcast_sends_only_to_active_opted_in_guests(logged_in_clien
                 amount_due="",
                 whatsapp_opt_in="true" if opted_in else "false",
             ),
+            files=resident_uploads(),
             headers=headers,
         )
         assert response.status_code == 201
@@ -902,6 +960,83 @@ def test_whatsapp_broadcast_sends_only_to_active_opted_in_guests(logged_in_clien
     assert response.json()["sent_count"] == 1
     assert response.json()["failed_count"] == 0
     assert sent == [("919876543210", "Water maintenance at 3 PM.")]
+
+
+def test_whatsapp_payment_reminders_send_only_to_opted_in_unpaid_guests_with_alternate_day_cooldown(
+    logged_in_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    for bed_number, name, payment_status, opted_in in (
+        (2, "Unpaid Opted In", "unpaid", "true"),
+        (3, "Unpaid Opted Out", "unpaid", "false"),
+        (4, "Paid Opted In", "paid", "true"),
+    ):
+        response = client.post(
+            "/api/residents",
+            data=resident_form(
+                name=name,
+                bed_number=str(bed_number),
+                payment_status=payment_status,
+                amount_due="1250.50" if payment_status == "unpaid" else "",
+                whatsapp_opt_in=opted_in,
+            ),
+            files=resident_uploads(),
+            headers=headers,
+        )
+        assert response.status_code == 201
+
+    monkeypatch.setattr(config, "WHATSAPP_ACCESS_TOKEN", "test-token")
+    monkeypatch.setattr(config, "WHATSAPP_PHONE_NUMBER_ID", "test-phone-id")
+    monkeypatch.setattr(config, "WHATSAPP_BROADCAST_TEMPLATE", "payment_reminder")
+    sent = []
+
+    async def fake_send(to: str, message: str) -> None:
+        sent.append((to, message))
+
+    monkeypatch.setattr(main_module, "_send_whatsapp_template_message", fake_send)
+
+    response = client.post("/api/whatsapp/payment-reminders", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {
+        "eligible_count": 1,
+        "sent_count": 1,
+        "skipped_count": 0,
+        "failed_count": 0,
+        "failed_residents": [],
+    }
+    assert len(sent) == 1
+    assert sent[0][0] == "919876543210"
+    assert "Hello Unpaid Opted In" in sent[0][1]
+    assert "₹1,250.50" in sent[0][1]
+    assert "Thank you, Test Hostel." in sent[0][1]
+
+    with database.transaction() as connection:
+        sent_date = connection.execute(
+            "SELECT sent_date FROM whatsapp_payment_reminders"
+        ).fetchone()["sent_date"]
+    blocked_today = client.post("/api/whatsapp/payment-reminders", headers=headers)
+    assert blocked_today.json()["sent_count"] == 0
+    assert blocked_today.json()["skipped_count"] == 1
+
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE whatsapp_payment_reminders SET sent_date = ?",
+            ((date.fromisoformat(sent_date) - timedelta(days=1)).isoformat(),),
+        )
+    blocked_after_yesterday = client.post("/api/whatsapp/payment-reminders", headers=headers)
+    assert blocked_after_yesterday.json()["sent_count"] == 0
+    assert blocked_after_yesterday.json()["skipped_count"] == 1
+
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE whatsapp_payment_reminders SET sent_date = ?",
+            ((date.fromisoformat(sent_date) - timedelta(days=2)).isoformat(),),
+        )
+    allowed_after_alternate_day = client.post("/api/whatsapp/payment-reminders", headers=headers)
+    assert allowed_after_alternate_day.json()["sent_count"] == 1
+    assert len(sent) == 2
 
 
 def test_joiner_registration_invite_can_be_revoked(logged_in_client):
@@ -1344,7 +1479,7 @@ def test_owner_data_is_isolated_from_other_admins(logged_in_client):
     created_resident = owner_client.post(
         "/api/residents",
         data=resident_form(payment_status="paid", amount_due=""),
-        files={"person_photo": ("person.png", PERSON_PNG, "image/png")},
+        files=resident_uploads(),
         headers={"X-CSRF-Token": owner_csrf},
     )
     assert created_resident.status_code == 201
@@ -1390,6 +1525,7 @@ def test_owner_data_is_isolated_from_other_admins(logged_in_client):
         assert other_dashboard["activity"] == []
         assert other_owner_client.get("/api/bookings").json() == []
         assert [item["username"] for item in other_owner_client.get("/api/staff").json()] == ["second-owner"]
+        assert other_owner_client.get(f"/api/residents/{resident_id}").status_code == 404
         assert other_owner_client.post(
             f"/api/residents/{resident_id}/payment", headers={"X-CSRF-Token": other_csrf}
         ).status_code == 404
@@ -1451,12 +1587,12 @@ def test_multiple_hostels_floors_rooms_and_sharing_are_flexible(logged_in_client
         "/api/residents",
         data=resident_form(
             name="Sixth Bed Resident",
-            aadhaar="",
             room=next(room["id"] for room in structure["rooms"] if room["room_number"] == "201"),
             bed_number="4",
             payment_status="paid",
             amount_due="",
         ),
+        files=resident_uploads(),
         headers=headers,
     )
     assert resident.status_code == 201
@@ -1483,7 +1619,12 @@ def test_room_delete_requires_vacancy_and_retains_resident_history(logged_in_cli
     client, csrf = logged_in_client
     headers = {"X-CSRF-Token": csrf}
     platform_headers = {"X-CSRF-Token": login_platform(client)}
-    created = client.post("/api/residents", data=resident_form(payment_status="paid", amount_due=""), headers=headers)
+    created = client.post(
+        "/api/residents",
+        data=resident_form(payment_status="paid", amount_due=""),
+        files=resident_uploads(),
+        headers=headers,
+    )
     assert created.status_code == 201
     resident_id = created.json()["id"]
 
@@ -1530,12 +1671,12 @@ def test_hostel_delete_requires_vacancy_and_archives_all_rooms(logged_in_client)
         "/api/residents",
         data=resident_form(
             name="Hostel History Resident",
-            aadhaar="",
             room=room.json()["id"],
             bed_number="4",
             payment_status="paid",
             amount_due="",
         ),
+        files=resident_uploads(),
         headers=headers,
     )
     resident_id = resident.json()["id"]
@@ -1712,6 +1853,7 @@ def test_booking_reserves_room_and_confirmation_creates_resident(logged_in_clien
     assert client.post(
         "/api/residents",
         data=resident_form(room="room-101"),
+        files=resident_uploads(),
         headers=headers,
     ).status_code == 409
 

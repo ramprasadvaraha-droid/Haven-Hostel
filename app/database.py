@@ -127,6 +127,12 @@ CREATE TABLE IF NOT EXISTS residents (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS active_bed_assignment
 ON residents(room_id, bed_number) WHERE checked_out_at IS NULL;
+CREATE TABLE IF NOT EXISTS whatsapp_payment_reminders (
+    resident_id TEXT NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
+    sent_date TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (resident_id, sent_date)
+);
 CREATE TABLE IF NOT EXISTS registration_invites (
     id TEXT PRIMARY KEY,
     hostel_id TEXT NOT NULL REFERENCES hostels(id),

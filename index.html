@@ -222,6 +222,9 @@
     .primary-button { display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; border: 0; border-radius: 6px; color: white; background: var(--green); font-weight: 700; font-size: 12px; transition: background .18s, transform .18s; }
     .primary-button:hover { background: var(--green-dark); transform: translateY(-1px); }
     .primary-button svg { width: 16px; height: 16px; }
+    .secondary-button { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 5px; color: var(--green-dark); background: white; font-size: 12px; font-weight: 700; transition: background .18s, transform .18s; }
+    .secondary-button:hover { background: #f2f7f2; transform: translateY(-1px); }
+    .secondary-button:disabled { cursor: not-allowed; opacity: .55; }
     .room-charge-open { min-height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 5px; color: var(--green-dark); background: white; font-size: 12px; font-weight: 700; transition: background .18s, transform .18s; }
     .room-charge-open:hover { background: #f2f7f2; transform: translateY(-1px); }
     .heading-actions { display: flex; align-items: center; gap: 8px; }
@@ -283,6 +286,8 @@
     th { padding: 11px 18px; color: #92988f; background: #fcfcfa; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; }
     td { padding: 13px 18px; border-top: 1px solid #eff0ec; font-size: 11px; }
     .resident-name { font-weight: 700; }
+    .resident-name-button { padding: 0; border: 0; color: inherit; background: transparent; font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+    .resident-name-button:hover { color: var(--green); text-decoration: underline; }
     .resident-contact { margin-top: 3px; color: var(--muted); font-size: 10px; }
     .room-pill { padding: 4px 7px; border-radius: 4px; color: var(--green); background: var(--mint); font-size: 10px; font-weight: 700; }
     .table-empty { padding: 26px 18px; color: var(--muted); font-size: 11px; text-align: center; }
@@ -292,6 +297,11 @@
     .payment-paid { color: var(--green); font-weight: 700; }
     .payment-actions { display: flex; align-items: center; gap: 6px; }
     .document-link { color: var(--green); font-weight: 600; }
+    .resident-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; margin: 0; }
+    .resident-detail { min-width: 0; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+    .resident-detail dt { color: var(--muted); font-size: 10px; font-weight: 700; }
+    .resident-detail dd { margin: 4px 0 0; color: var(--ink); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+    .resident-detail-wide { grid-column: 1 / -1; }
     .whatsapp-button, .mark-paid-button { padding: 5px 8px; border: 1px solid #d8e6da; border-radius: 4px; color: var(--green-dark); background: #f2f7f2; font-size: 10px; font-weight: 700; }
     .whatsapp-button:hover, .mark-paid-button:hover { background: #e5f0e6; }
     .consent-toggle { margin-top: 5px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--green-dark); background: white; font-size: 10px; font-weight: 600; }
@@ -543,6 +553,9 @@
       .topbar { margin-bottom: 25px; }
       .heading-row { align-items: start; }
       .heading-row .primary-button { min-height: 38px; padding: 0 10px; font-size: 11px; white-space: nowrap; }
+      .heading-row .secondary-button { min-height: 38px; padding: 0 10px; font-size: 11px; white-space: nowrap; }
+      .resident-details-grid { grid-template-columns: 1fr; }
+      .resident-detail-wide { grid-column: auto; }
       .heading-actions { align-items: flex-start; flex-wrap: wrap; justify-content: flex-start; }
       .room-charge-open { min-height: 38px; padding: 0 10px; font-size: 11px; }
       .heading-row .primary-button svg { width: 14px; }
@@ -742,7 +755,7 @@
       </section>
 
       <section class="page-view" id="residents-view" hidden>
-        <div class="heading-row"><div><p class="eyebrow">Residents</p><h1>Residents</h1><div class="date">View current stays and manage check-ins and check-outs.</div></div><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Add resident</button></div>
+        <div class="heading-row"><div><p class="eyebrow">Residents</p><h1>Residents</h1><div class="date">View current stays and manage check-ins and check-outs.</div></div><div class="heading-actions"><button class="secondary-button" id="send-payment-reminders" type="button" data-admin-only>Send reminders</button><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Add resident</button></div></div>
         <section class="section">
           <div class="section-head"><div><h2 class="section-title">Current residents</h2><div class="section-subtitle" id="resident-count-all">No active residents</div></div><div class="table-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5" stroke-linecap="round"/></svg><input class="search" id="resident-search-all" type="search" placeholder="Find a resident" aria-label="Find a resident"></div></div></div><div id="resident-table-all"></div>
         </section>
@@ -831,26 +844,32 @@
           <div class="form-grid">
             <div class="field full"><label for="resident-name-input">Full name</label><input id="resident-name-input" name="name" type="text" autocomplete="name" required maxlength="80" placeholder="As shown on ID"></div>
             <div class="field"><label for="mobile-input">Mobile number</label><input id="mobile-input" name="mobile" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" placeholder="10-digit Indian number (defaults to +91)"></div>
-            <div class="field"><label for="emergency-contact-input">Emergency contact number <span>(optional)</span></label><input id="emergency-contact-input" name="emergency_contact" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="10-digit Indian number"></div>
-            <div class="field" id="emergency-relationship-field" hidden><label for="emergency-relationship-input">Relationship to emergency contact</label><input id="emergency-relationship-input" name="emergency_contact_relationship" maxlength="80" placeholder="e.g. Parent, spouse, friend"></div>
-            <div class="field"><label for="aadhaar-input">Aadhaar number <span>(optional)</span></label><input id="aadhaar-input" name="aadhaar" type="password" inputmode="numeric" pattern="[0-9 ]{12,14}" maxlength="14" autocomplete="off" placeholder="12 digits"><div class="field-help">Hidden on screen after registration.</div></div>
-            <div class="field"><label for="purpose-of-stay-input">Purpose of stay <span>(optional)</span></label><select id="purpose-of-stay-input" name="purpose_of_stay"><option value="">Choose if you wish</option><option value="Work">Work</option><option value="Studies">Studies</option><option value="Other">Other</option></select></div>
+            <div class="field"><label for="emergency-contact-input">Emergency contact number</label><input id="emergency-contact-input" name="emergency_contact" type="tel" inputmode="tel" autocomplete="tel" required minlength="10" maxlength="20" placeholder="10-digit Indian number"></div>
+            <div class="field" id="emergency-relationship-field"><label for="emergency-relationship-input">Relationship to emergency contact</label><input id="emergency-relationship-input" name="emergency_contact_relationship" required maxlength="80" placeholder="e.g. Parent, spouse, friend"></div>
+            <div class="field"><label for="aadhaar-input">Aadhaar number</label><input id="aadhaar-input" name="aadhaar" type="text" inputmode="numeric" pattern="[0-9 ]{12,14}" required maxlength="14" autocomplete="off" placeholder="12 digits"><div class="field-help">Full Aadhaar is visible only in resident details after saving.</div></div>
+            <div class="field"><label for="purpose-of-stay-input">Purpose of stay</label><select id="purpose-of-stay-input" name="purpose_of_stay" required><option value="" selected disabled>Choose purpose</option><option value="Work">Work</option><option value="Studies">Studies</option><option value="Other">Other</option></select></div>
             <div class="field" id="purpose-other-field" hidden><label for="purpose-other-input">Please describe</label><input id="purpose-other-input" name="purpose_other" maxlength="120" placeholder="Briefly describe your purpose"></div>
-            <div class="field full"><label for="office-address-input">Workplace/college address <span>(optional)</span></label><input id="office-address-input" name="office_address" type="text" maxlength="300" autocomplete="street-address" placeholder="Workplace or college address"></div>
+            <div class="field full"><label for="office-address-input">Workplace/college address</label><input id="office-address-input" name="office_address" type="text" required maxlength="300" autocomplete="street-address" placeholder="Workplace or college address"></div>
             <div class="field"><label for="room-select">Assign room</label><select id="room-select" name="room" required></select></div>
             <div class="field"><label for="bed-select">Assign bed</label><select id="bed-select" name="bed_number" required></select></div>
             <div class="field"><label for="checkin-input">Joining date</label><input id="checkin-input" name="joining_date" type="date" required></div>
             <div class="field"><label for="payment-date">Next payment date</label><input id="payment-date" name="payment_due_date" type="date" readonly aria-describedby="payment-date-help"><div class="field-help" id="payment-date-help">One month after joining; moves to month-end when needed.</div></div>
             <div class="field"><label for="payment-status">Payment status</label><select id="payment-status" name="payment_status" required><option value="" selected disabled>Select status</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></div>
             <div class="field" id="amount-due-field" hidden><label for="amount-due">Balance due <span>(INR)</span></label><input id="amount-due" name="amount_due" type="number" min="0.01" max="1000000" step="0.01" placeholder="Amount outstanding"><div class="field-help">This amount is included in the WhatsApp reminder.</div></div>
-            <div class="field"><label for="person-photo">Person photo <span>(optional)</span></label><input id="person-photo" name="person_photo" type="file" accept="image/*"><div class="field-help">Image file, up to 5 MB, if provided.</div></div>
-            <div class="field"><label for="aadhaar-photo">Aadhaar photo <span>(optional)</span></label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/*"><div class="field-help">Image file, up to 5 MB, if provided.</div></div>
+            <div class="field"><label for="person-photo">Person photo</label><input id="person-photo" name="person_photo" type="file" accept="image/*" required><div class="field-help">Required image file, up to 5 MB.</div></div>
+            <div class="field"><label for="aadhaar-photo">Aadhaar photo</label><input id="aadhaar-photo" name="aadhaar_photo" type="file" accept="image/*" required><div class="field-help">Required image file, up to 5 MB.</div></div>
             <div class="field full"><label class="consent"><input name="whatsapp_opt_in" type="checkbox" value="true"><span>Resident has agreed to receive hostel announcements and updates via WhatsApp. Optional; they can opt out later.</span></label></div>
-            <div class="field full sensitive-note">Uploaded photos are encrypted and available only to authorized hostel staff. Aadhaar and photos remain optional.</div>
+            <div class="field full sensitive-note">Aadhaar and uploaded photos are encrypted and visible only to authorized hostel staff.</div>
           </div>
-          <div class="form-footer"><span class="form-footer-note">Aadhaar and photos are optional.</span><div class="footer-actions"><button class="cancel-button" type="button" data-close>Cancel</button><button class="primary-button" type="submit">Complete check-in</button></div></div>
+          <div class="form-footer"><span class="form-footer-note">All resident details and both photos are required. WhatsApp opt-in is voluntary.</span><div class="footer-actions"><button class="cancel-button" type="button" data-close>Cancel</button><button class="primary-button" type="submit">Complete check-in</button></div></div>
         </div>
       </form>
+    </section>
+  </div>
+  <div class="modal-backdrop" id="resident-details-modal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="resident-details-title">
+      <div class="modal-head"><div><h2 id="resident-details-title">Resident details</h2><p>Resident information and assigned stay.</p></div><button class="close-button" type="button" data-close-resident-details aria-label="Close resident details">×</button></div>
+      <div class="form-body"><dl class="resident-details-grid" id="resident-details-content"></dl></div>
     </section>
   </div>
   <div class="modal-backdrop" id="room-charges-modal" hidden>

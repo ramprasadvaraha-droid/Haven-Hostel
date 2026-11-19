@@ -13,13 +13,14 @@
   const platformPasswordChangeForm = $('#platform-password-change-form');
   const joinForm = $('#join-form');
   const joinModal = $('#join-modal');
+  const residentDetailsModal = $('#resident-details-modal');
+  const residentDetailsContent = $('#resident-details-content');
   const roomChargesModal = $('#room-charges-modal');
   const platformPasswordChangeModal = $('#platform-password-change-modal');
   const roomSelect = $('#room-select');
   const bedSelect = $('#bed-select');
   const joiningDate = $('#checkin-input');
   const paymentDate = $('#payment-date');
-  const emergencyContactInput = $('#emergency-contact-input');
   const emergencyRelationshipInput = $('#emergency-relationship-input');
   const emergencyRelationshipField = $('#emergency-relationship-field');
   const purposeInput = $('#purpose-of-stay-input');
@@ -34,10 +35,8 @@
   let toastTimer;
 
   function updateJoinConditionalFields() {
-    const hasEmergencyContact = Boolean(emergencyContactInput.value.trim());
-    emergencyRelationshipField.hidden = !hasEmergencyContact;
-    emergencyRelationshipInput.required = hasEmergencyContact;
-    if (!hasEmergencyContact) emergencyRelationshipInput.value = '';
+    emergencyRelationshipField.hidden = false;
+    emergencyRelationshipInput.required = true;
     const hasOtherPurpose = purposeInput.value === 'Other';
     purposeOtherField.hidden = !hasOtherPurpose;
     purposeOtherInput.required = hasOtherPurpose;
@@ -195,6 +194,7 @@
     });
     $('#nav-tools').hidden = layoutLocked;
     $('#whatsapp-broadcast-section').hidden = user.role !== 'admin';
+    $('#send-payment-reminders').hidden = layoutLocked || user.role !== 'admin';
     $('#registration-admin-section').hidden = user.role !== 'admin';
     $('#registration-applications-section').hidden = user.role !== 'admin';
     $('.side-note').hidden = layoutLocked;
@@ -428,6 +428,47 @@
     }).join(' · ');
   }
 
+  function renderResidentDetails(resident) {
+    const emergencyContact = resident.emergency_contact
+      ? `${resident.emergency_contact} · ${resident.emergency_contact_relationship}`
+      : 'Not recorded';
+    const balance = resident.payment_status === 'unpaid'
+      ? formatCurrency(resident.amount_due_paise)
+      : 'None';
+    const documents = (resident.documents || []).map(document => {
+      const label = document.kind === 'person_photo' ? 'Person photo' : 'Aadhaar photo';
+      return `<a class="document-link" href="${escapeHTML(document.preview_url)}" target="_blank" rel="noopener">View ${label}</a> · <a class="document-link" href="${escapeHTML(document.url)}" download>Download ${label}</a>`;
+    }).join('<br>') || 'No photos';
+    const details = [
+      ['Full name', resident.name],
+      ['Mobile number', resident.mobile],
+      ['Emergency contact', emergencyContact],
+      ['Aadhaar number', resident.aadhaar || 'Not recorded'],
+      ['Purpose of stay', resident.purpose_of_stay || 'Not recorded'],
+      ['Workplace/college address', resident.office_address || 'Not recorded', true],
+      ['Hostel', resident.hostel_name],
+      ['Floor', floorLabel(resident.floor_number)],
+      ['Room and bed', `Room ${resident.room} · Bed ${resident.bed_number}`],
+      ['Joining date', formatDate(resident.joining_date)],
+      ['Next payment date', formatDate(resident.payment_due_date)],
+      ['Payment status', resident.payment_status === 'paid' ? 'Paid' : 'Unpaid'],
+      ['Outstanding balance', balance],
+      ['WhatsApp updates', resident.whatsapp_opt_in ? 'Opted in' : 'Not opted in'],
+      ['Rules accepted', resident.terms_accepted_at ? formatDate(resident.terms_accepted_at.slice(0, 10)) : 'Not recorded'],
+    ];
+    $('#resident-details-title').textContent = resident.name;
+    residentDetailsContent.innerHTML = details.map(([label, value, wide]) =>
+      `<div class="resident-detail${wide ? ' resident-detail-wide' : ''}"><dt>${escapeHTML(label)}</dt><dd>${escapeHTML(value)}</dd></div>`
+    ).join('') + `<div class="resident-detail resident-detail-wide"><dt>Documents</dt><dd>${documents}</dd></div>`;
+    residentDetailsModal.hidden = false;
+    residentDetailsModal.querySelector('[data-close-resident-details]').focus();
+  }
+
+  function closeResidentDetailsModal() {
+    residentDetailsModal.hidden = true;
+    residentDetailsContent.innerHTML = '';
+  }
+
   function residentRows(searchValue = '') {
     const query = searchValue.trim().toLowerCase();
     const filtered = state.residents.filter(resident =>
@@ -436,13 +477,19 @@
     if (!filtered.length) {
       return `<div class="table-empty">${state.residents.length ? 'No residents match your search.' : 'No active residents yet. Register a joiner to get started.'}</div>`;
     }
-    return `<div class="table-scroll"><table><thead><tr><th>Resident</th><th>Hostel / Floor / Room</th><th>Joining date</th><th>Next payment date</th><th>Payment</th><th>Documents</th><th>WhatsApp</th><th>Actions</th></tr></thead><tbody>${filtered.map(resident => `<tr><td><div class="resident-name">${escapeHTML(resident.name)}</div><div class="resident-contact">${escapeHTML(resident.mobile)}${resident.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(resident.aadhaar_last4)}` : ''}</div>${resident.emergency_contact ? `<div class="resident-contact">Emergency: ${escapeHTML(resident.emergency_contact)}${resident.emergency_contact_relationship ? ` · ${escapeHTML(resident.emergency_contact_relationship)}` : ''}</div>` : ''}${resident.purpose_of_stay ? `<div class="resident-contact">Purpose: ${escapeHTML(resident.purpose_of_stay)}</div>` : ''}${resident.office_address ? `<div class="resident-contact">Workplace/college: ${escapeHTML(resident.office_address)}</div>` : ''}<div class="resident-contact">Rules accepted: ${resident.terms_accepted_at ? escapeHTML(formatDate(resident.terms_accepted_at.slice(0, 10))) : 'Not recorded'}</div></td><td><span class="room-pill">${escapeHTML(resident.room)} · Bed ${resident.bed_number}</span><div class="resident-contact">${escapeHTML(resident.hostel_name)} · ${floorLabel(resident.floor_number)}</div></td><td>${escapeHTML(formatDate(resident.joining_date))}</td><td>${escapeHTML(formatDate(resident.payment_due_date))}</td><td>${resident.payment_status === 'unpaid' ? `<span class="payment-unpaid">${escapeHTML(formatCurrency(resident.amount_due_paise))} due</span>` : '<span class="payment-paid">Paid</span>'}</td><td>${residentDocuments(resident)}</td><td><span class="resident-contact">${resident.whatsapp_opt_in ? 'Opted in' : 'Not opted in'}</span><button class="consent-toggle" type="button" data-whatsapp-consent="${escapeHTML(resident.id)}">${resident.whatsapp_opt_in ? 'Opt out' : 'Record opt-in'}</button></td><td><div class="payment-actions">${resident.payment_status === 'unpaid' ? `<button class="whatsapp-button" type="button" data-whatsapp="${escapeHTML(resident.id)}">Send reminder</button><button class="mark-paid-button" type="button" data-mark-paid="${escapeHTML(resident.id)}">Mark paid</button>` : ''}<button class="exit-button" type="button" data-checkout="${escapeHTML(resident.id)}">Check out</button></div></td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-scroll"><table><thead><tr><th>Resident</th><th>Hostel / Floor / Room</th><th>Joining date</th><th>Next payment date</th><th>Payment</th><th>Documents</th><th>WhatsApp</th><th>Actions</th></tr></thead><tbody>${filtered.map(resident => `<tr><td><button class="resident-name-button" type="button" title="View full resident details" data-resident-details="${escapeHTML(resident.id)}">${escapeHTML(resident.name)}</button><div class="resident-contact">${escapeHTML(resident.mobile)}${resident.aadhaar_last4 ? ` · Aadhaar ending ${escapeHTML(resident.aadhaar_last4)}` : ''}</div>${resident.emergency_contact ? `<div class="resident-contact">Emergency: ${escapeHTML(resident.emergency_contact)}${resident.emergency_contact_relationship ? ` · ${escapeHTML(resident.emergency_contact_relationship)}` : ''}</div>` : ''}${resident.purpose_of_stay ? `<div class="resident-contact">Purpose: ${escapeHTML(resident.purpose_of_stay)}</div>` : ''}${resident.office_address ? `<div class="resident-contact">Workplace/college: ${escapeHTML(resident.office_address)}</div>` : ''}<div class="resident-contact">Rules accepted: ${resident.terms_accepted_at ? escapeHTML(formatDate(resident.terms_accepted_at.slice(0, 10))) : 'Not recorded'}</div></td><td><span class="room-pill">${escapeHTML(resident.room)} · Bed ${resident.bed_number}</span><div class="resident-contact">${escapeHTML(resident.hostel_name)} · ${floorLabel(resident.floor_number)}</div></td><td>${escapeHTML(formatDate(resident.joining_date))}</td><td>${escapeHTML(formatDate(resident.payment_due_date))}</td><td>${resident.payment_status === 'unpaid' ? `<span class="payment-unpaid">${escapeHTML(formatCurrency(resident.amount_due_paise))} due</span>` : '<span class="payment-paid">Paid</span>'}</td><td>${residentDocuments(resident)}</td><td><span class="resident-contact">${resident.whatsapp_opt_in ? 'Opted in' : 'Not opted in'}</span><button class="consent-toggle" type="button" data-whatsapp-consent="${escapeHTML(resident.id)}">${resident.whatsapp_opt_in ? 'Opt out' : 'Record opt-in'}</button></td><td><div class="payment-actions">${resident.payment_status === 'unpaid' ? `<button class="whatsapp-button" type="button" data-whatsapp="${escapeHTML(resident.id)}">Send reminder</button><button class="mark-paid-button" type="button" data-mark-paid="${escapeHTML(resident.id)}">Mark paid</button>` : ''}<button class="exit-button" type="button" data-checkout="${escapeHTML(resident.id)}">Check out</button></div></td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function renderResidents() {
     const countText = `${state.residents.length} active resident${state.residents.length === 1 ? '' : 's'}`;
     $('#resident-count').textContent = state.residents.length ? countText : 'No active residents';
     $('#resident-count-all').textContent = state.residents.length ? countText : 'No active residents';
+    const reminderCount = state.residents.filter(resident =>
+      resident.payment_status === 'unpaid' && resident.amount_due_paise > 0 && resident.whatsapp_opt_in).length;
+    const reminderButton = $('#send-payment-reminders');
+    reminderButton.disabled = !state.whatsappBroadcastStatus?.ready || reminderCount === 0;
+    reminderButton.textContent = `Send reminders (${reminderCount})`;
+    reminderButton.title = state.whatsappBroadcastStatus?.reason || 'Only unpaid residents who opted in to WhatsApp are included.';
     $('#resident-table').innerHTML = residentRows($('#resident-search').value);
     $('#resident-table-all').innerHTML = residentRows($('#resident-search-all').value);
   }
@@ -727,7 +774,6 @@
     $('#amount-due').dataset.rateDefault = 'false';
   }
 
-  emergencyContactInput.addEventListener('input', updateJoinConditionalFields);
   purposeInput.addEventListener('change', updateJoinConditionalFields);
 
   function openRoomChargesModal() {
@@ -758,7 +804,7 @@
     const phone = digits.length === 10 ? `91${digits}` : digits.startsWith('0') ? `91${digits.slice(1)}` : digits;
     const amount = formatCurrency(resident.amount_due_paise);
     const dueDate = formatDate(resident.payment_due_date);
-    const message = `Hello ${resident.name}, our records show an outstanding hostel payment of ${amount}, due on ${dueDate}. Please complete payment at your earliest convenience. If you have already paid, please disregard this reminder. Thank you, Haven Hostel.`;
+    const message = `Hello ${resident.name}, our records show an outstanding hostel payment of ${amount}, due on ${dueDate}. Please complete payment at your earliest convenience. If you have already paid, please disregard this reminder. Thank you, ${resident.hostel_name}.`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   }
 
@@ -1535,6 +1581,22 @@
       }
     }
 
+    const residentDetailsButton = event.target.closest('[data-resident-details]');
+    if (residentDetailsButton) {
+      residentDetailsButton.disabled = true;
+      try {
+        const details = await apiRequest(`/api/residents/${encodeURIComponent(residentDetailsButton.dataset.residentDetails)}`);
+        renderResidentDetails(details);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        residentDetailsButton.disabled = false;
+      }
+    }
+
+    if (event.target === residentDetailsModal || event.target.closest('[data-close-resident-details]')) {
+      closeResidentDetailsModal();
+    }
     if (event.target === joinModal || event.target.closest('[data-close]')) closeJoinModal();
     if (event.target.closest('.open-room-charges') && !ownerLayoutNeedsSetup()) openRoomChargesModal();
     if (event.target === roomChargesModal || event.target.closest('[data-close-room-charges]')) closeRoomChargesModal();
@@ -1752,6 +1814,28 @@
       if (resident?.payment_status === 'unpaid') openWhatsAppReminder(resident);
     }
 
+    const paymentRemindersButton = event.target.closest('#send-payment-reminders');
+    if (paymentRemindersButton) {
+      paymentRemindersButton.disabled = true;
+      paymentRemindersButton.textContent = 'Sending reminders...';
+      try {
+        const result = await apiRequest('/api/whatsapp/payment-reminders', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+        const summary = [
+          `Sent ${result.sent_count} reminder${result.sent_count === 1 ? '' : 's'}`,
+          result.skipped_count ? `skipped ${result.skipped_count} already reminded today or yesterday` : '',
+          result.failed_count ? `${result.failed_count} failed` : '',
+        ].filter(Boolean).join(' · ');
+        showToast(summary);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        renderResidents();
+      }
+    }
+
     const paidButton = event.target.closest('[data-mark-paid]');
     if (paidButton) {
       const resident = state.residents.find(item => item.id === paidButton.dataset.markPaid);
@@ -1787,6 +1871,7 @@
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
     if (!platformPasswordChangeModal.hidden) closePlatformPasswordChangeModal();
+    else if (!residentDetailsModal.hidden) closeResidentDetailsModal();
     else if (!roomChargesModal.hidden) closeRoomChargesModal();
     else if (!joinModal.hidden) closeJoinModal();
   });

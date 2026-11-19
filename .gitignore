@@ -9,3 +9,4 @@ data/
 *.sqlite3
 *.db
 .vercel
+node_modules/
