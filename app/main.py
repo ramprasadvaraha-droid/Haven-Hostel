@@ -22,7 +22,7 @@ import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from urllib.parse import quote
 
 from app import config, database
@@ -31,6 +31,7 @@ from app.security import hash_session_token, new_token, password_hasher, verify_
 from app.storage import (
     document_storage_ready,
     read_document,
+    remove_encrypted_document,
     remove_local_encrypted_document,
     save_encrypted_document,
 )
@@ -81,11 +82,11 @@ class PlatformPasswordChangeRequest(StrongPasswordRequest):
 
 
 class PlatformPasswordResetRequest(BaseModel):
-    username: str = Field(min_length=3, max_length=40)
+    username: str = Field(min_length=3, max_length=254)
 
 
 class PlatformPasswordResetConfirmRequest(StrongPasswordRequest):
-    username: str = Field(min_length=3, max_length=40)
+    username: str = Field(min_length=3, max_length=254)
     code: str = Field(min_length=8, max_length=8, pattern=r"^[0-9]{8}$")
 
 
@@ -195,6 +196,25 @@ class WhatsAppBroadcastRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1024)
 
 
+class RosterImportResident(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+    room_number: str = Field(min_length=1, max_length=20)
+    mobile: str = Field(min_length=10, max_length=20)
+    aadhaar_last4: str = Field(pattern=r"^[0-9]{4}$")
+    joining_date: date
+    payment_status: Literal["paid", "unpaid"]
+    amount_due: Decimal | None = Field(default=None, ge=0, le=1000000)
+
+
+class RosterImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hostel_id: str = Field(min_length=1, max_length=64)
+    rows: list[RosterImportResident] = Field(min_length=1, max_length=1000)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if config.DATABASE_URL:
@@ -221,10 +241,12 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' "
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "
+        "worker-src 'self' blob:; style-src 'self' 'unsafe-inline' "
         "https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data: https://images.unsplash.com; "
-        "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+        "connect-src 'self' https://cdn.jsdelivr.net https://tessdata.projectnaptha.com; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     )
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
@@ -514,6 +536,11 @@ def record_failed_login(username: str, address_hash: str) -> None:
             "INSERT INTO login_attempts (username, address_hash, succeeded, attempted_at) VALUES (?, ?, 0, ?)",
             (username.casefold(), address_hash, attempted_at),
         )
+        database.write_audit(connection, None, "auth.login_failed", "staff", None, {"username": username[:40]})
+        connection.execute(
+            "DELETE FROM login_attempts WHERE attempted_at < ?",
+            ((datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),),
+        )
 
 
 @app.post("/api/platform/session/password")
@@ -567,10 +594,7 @@ def request_platform_password_reset(payload: PlatformPasswordResetRequest, reque
                 "INSERT INTO login_attempts (username, address_hash, succeeded, attempted_at) VALUES (?, ?, 0, ?)",
                 (username_key, address_hash, now_text),
             )
-            account_row = connection.execute(
-                "SELECT id, recovery_email FROM platform_accounts WHERE username = ? AND active = 1",
-                (payload.username,),
-            ).fetchone()
+            account_row = find_platform_account_by_username_or_recovery_email(connection, payload.username)
             if account_row and account_row["recovery_email"]:
                 recent_resets = connection.execute(
                     "SELECT COUNT(*) FROM platform_password_resets WHERE account_id = ? AND created_at > ?",
@@ -606,11 +630,9 @@ def request_platform_password_reset(payload: PlatformPasswordResetRequest, reque
 def reset_platform_password(payload: PlatformPasswordResetConfirmRequest) -> dict[str, str]:
     now_text = datetime.now(timezone.utc).isoformat()
     reset_succeeded = False
+    reset_username = ""
     with database.transaction() as connection:
-        account = connection.execute(
-            "SELECT id FROM platform_accounts WHERE username = ? AND active = 1",
-            (payload.username,),
-        ).fetchone()
+        account = find_platform_account_by_username_or_recovery_email(connection, payload.username)
         reset = connection.execute(
             "SELECT id, code_hash, attempts FROM platform_password_resets "
             "WHERE account_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
@@ -625,6 +647,7 @@ def reset_platform_password(payload: PlatformPasswordResetConfirmRequest) -> dic
             connection.execute("DELETE FROM platform_password_resets WHERE account_id = ?", (account["id"],))
             database.write_audit(connection, None, "platform.password_reset", "platform_account", account["id"])
             reset_succeeded = True
+            reset_username = account["username"]
         elif reset:
             connection.execute(
                 "UPDATE platform_password_resets SET attempts = attempts + 1 WHERE id = ?",
@@ -632,7 +655,22 @@ def reset_platform_password(payload: PlatformPasswordResetConfirmRequest) -> dic
             )
     if not reset_succeeded:
         raise HTTPException(status_code=400, detail="The reset code is invalid or expired.")
-    return {"status": "reset"}
+    return {"status": "reset", "username": reset_username}
+
+
+def find_platform_account_by_username_or_recovery_email(connection, identity: str):
+    account = connection.execute(
+        "SELECT id, username, recovery_email FROM platform_accounts WHERE username = ? AND active = 1",
+        (identity,),
+    ).fetchone()
+    if account:
+        return account
+    email_matches = connection.execute(
+        "SELECT id, username, recovery_email FROM platform_accounts "
+        "WHERE lower(recovery_email) = lower(?) AND active = 1 LIMIT 2",
+        (identity,),
+    ).fetchall()
+    return email_matches[0] if len(email_matches) == 1 else None
 
 
 def send_platform_password_reset_code(email_address: str, code: str) -> None:
@@ -658,11 +696,6 @@ def send_platform_password_reset_code(email_address: str, code: str) -> None:
         if config.HOSTEL_SMTP_USERNAME:
             smtp.login(config.HOSTEL_SMTP_USERNAME, config.HOSTEL_SMTP_PASSWORD)
         smtp.send_message(message)
-        database.write_audit(connection, None, "auth.login_failed", "staff", None, {"username": username[:40]})
-        connection.execute(
-            "DELETE FROM login_attempts WHERE attempted_at < ?",
-            ((datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),),
-        )
 
 
 @app.post("/api/session")
@@ -822,6 +855,7 @@ def serialize_resident(row: sqlite3.Row, documents: list[dict[str, str]]) -> dic
         if row["emergency_contact_relationship_ciphertext"]
         else "",
         "aadhaar_last4": aadhaar[-4:] if aadhaar else "",
+        "aadhaar_is_partial": bool(row["aadhaar_last4_only"]),
         "purpose_of_stay": decrypt_text(row["purpose_of_stay_ciphertext"])
         if row["purpose_of_stay_ciphertext"]
         else "",
@@ -870,8 +904,10 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
             (staff["owner_id"],),
         ).fetchall()
         hostel_rows = connection.execute(
-            "SELECT id, name, ac_type, address_ciphertext, location_ciphertext, owner_mobile_ciphertext "
-            "FROM hostels WHERE active = 1 AND owner_id = ? ORDER BY name COLLATE NOCASE",
+            "SELECT hostel.id, hostel.name, hostel.ac_type, hostel.address_ciphertext, "
+            "hostel.location_ciphertext, hostel.owner_mobile_ciphertext, roster.imported_at AS roster_imported_at "
+            "FROM hostels hostel LEFT JOIN resident_roster_imports roster ON roster.hostel_id = hostel.id "
+            "WHERE hostel.active = 1 AND hostel.owner_id = ? ORDER BY hostel.name COLLATE NOCASE",
             (staff["owner_id"],),
         ).fetchall()
         room_type_charge_rows = connection.execute(
@@ -943,6 +979,7 @@ def dashboard(staff: dict[str, str] = Depends(current_staff)) -> dict[str, objec
             "address": decrypt_text(row["address_ciphertext"]) if row["address_ciphertext"] else "",
             "location": decrypt_text(row["location_ciphertext"]) if row["location_ciphertext"] else "",
             "owner_mobile": decrypt_text(row["owner_mobile_ciphertext"]) if row["owner_mobile_ciphertext"] else "",
+            "roster_imported_at": row["roster_imported_at"] or "",
             "floors": [],
             "occupied": 0,
         }
@@ -1097,7 +1134,11 @@ def resident_details(
         for document in document_rows
     ]
     details = serialize_resident(row, documents)
-    details["aadhaar"] = decrypt_text(row["aadhaar_ciphertext"]) if row["aadhaar_ciphertext"] else ""
+    details["aadhaar"] = (
+        decrypt_text(row["aadhaar_ciphertext"])
+        if row["aadhaar_ciphertext"] and not row["aadhaar_last4_only"]
+        else ""
+    )
     return details
 
 
@@ -3403,6 +3444,274 @@ async def create_resident(
             remove_local_encrypted_document(encrypted_path)
         raise
     return {"id": resident_id}
+
+
+@app.post("/api/residents/roster-import", status_code=201)
+def import_resident_roster(
+    payload: RosterImportRequest,
+    staff: dict[str, str] = Depends(require_admin),
+) -> dict[str, object]:
+    now = datetime.now(timezone.utc)
+    now_text = now.isoformat()
+    import_id = str(uuid.uuid4())
+    assignments: list[dict[str, object]] = []
+    errors: list[str] = []
+    seen_mobiles: set[str] = set()
+
+    with database.transaction() as connection:
+        hostel = connection.execute(
+            "SELECT id, name FROM hostels WHERE id = ? AND owner_id = ? AND active = 1",
+            (payload.hostel_id, staff["owner_id"]),
+        ).fetchone()
+        if not hostel:
+            raise HTTPException(status_code=404, detail="Choose a hostel belonging to your account.")
+        if connection.execute(
+            "SELECT 1 FROM resident_roster_imports WHERE hostel_id = ?",
+            (payload.hostel_id,),
+        ).fetchone():
+            raise HTTPException(status_code=409, detail="The one-time resident roster import is already complete.")
+
+        rooms = connection.execute(
+            "SELECT room.id, room.room_number, room.share_count, floor.floor_number "
+            "FROM rooms room JOIN floors floor ON floor.id = room.floor_id "
+            "WHERE floor.hostel_id = ? AND room.active = 1 "
+            "AND CAST(floor.active AS TEXT) IN ('1', 'true') "
+            "ORDER BY floor.floor_number, room.room_number",
+            (payload.hostel_id,),
+        ).fetchall()
+        rooms_by_number: dict[str, list[sqlite3.Row]] = {}
+        for room in rooms:
+            rooms_by_number.setdefault(room["room_number"].casefold(), []).append(room)
+        if not rooms:
+            raise HTTPException(status_code=409, detail="Add active rooms before importing residents.")
+
+        occupied: dict[str, set[int]] = {}
+        resident_rows = connection.execute(
+            "SELECT resident.room_id, resident.bed_number, resident.mobile_ciphertext "
+            "FROM residents resident JOIN rooms room ON room.id = resident.room_id "
+            "JOIN floors floor ON floor.id = room.floor_id "
+            "WHERE floor.hostel_id = ? AND resident.checked_out_at IS NULL",
+            (payload.hostel_id,),
+        ).fetchall()
+        existing_mobiles = {
+            decrypt_text(row["mobile_ciphertext"])
+            for row in resident_rows
+        }
+        for row in resident_rows:
+            occupied.setdefault(row["room_id"], set()).add(row["bed_number"])
+
+        reserved_rows = connection.execute(
+            "SELECT booking.room_id_reserved FROM bookings booking "
+            "JOIN rooms room ON room.id = booking.room_id_reserved "
+            "JOIN floors floor ON floor.id = room.floor_id "
+            "WHERE floor.hostel_id = ? AND booking.status = 'visit_booked' "
+            "AND booking.cancelled_at IS NULL AND booking.reservation_expires_at > ?",
+            (payload.hostel_id, now_text),
+        ).fetchall()
+        reserved_rooms = {row["room_id_reserved"] for row in reserved_rows}
+        planned_at = now_text
+
+        for index, row in enumerate(payload.rows, start=1):
+            row_errors: list[str] = []
+            name = row.name.strip()
+            room_number = row.room_number.strip()
+            if not name:
+                row_errors.append("enter a resident name")
+            try:
+                mobile = _normalize_phone(row.mobile.strip())
+            except HTTPException as error:
+                mobile = ""
+                row_errors.append(str(error.detail))
+            if mobile:
+                if mobile in existing_mobiles or mobile in seen_mobiles:
+                    row_errors.append("mobile number is already assigned to a resident or another row")
+                seen_mobiles.add(mobile)
+
+            matching_rooms = rooms_by_number.get(room_number.casefold(), [])
+            room = matching_rooms[0] if len(matching_rooms) == 1 else None
+            if not matching_rooms:
+                row_errors.append("room number was not found in this hostel")
+            elif len(matching_rooms) > 1:
+                row_errors.append("room number is ambiguous across floors; use a unique room number")
+            bed_number = 0
+            if room:
+                if room["id"] in reserved_rooms:
+                    row_errors.append("room is reserved for a visit")
+                else:
+                    free_beds = [
+                        number
+                        for number in range(1, room["share_count"] + 1)
+                        if number not in occupied.get(room["id"], set())
+                    ]
+                    if not free_beds:
+                        row_errors.append("room has no unoccupied beds")
+                    else:
+                        bed_number = free_beds[0]
+
+            if row.payment_status == "paid":
+                if row.amount_due is not None and row.amount_due != 0:
+                    row_errors.append("paid residents cannot have an outstanding balance")
+                amount_due_paise = 0
+            elif row.amount_due is None or row.amount_due <= 0:
+                row_errors.append("enter the balance due for an unpaid resident")
+                amount_due_paise = 0
+            else:
+                amount_due_paise = amount_to_paise(str(row.amount_due))
+
+            if row_errors:
+                errors.append(f"Row {index}: {', '.join(row_errors)}.")
+                continue
+
+            joined = row.joining_date
+            payment_due = due_date_after_one_month(joined)
+            resident_id = str(uuid.uuid4())
+            try:
+                connection.execute(
+                    "INSERT INTO residents (id, name_ciphertext, mobile_ciphertext, aadhaar_ciphertext, "
+                    "aadhaar_last4_only, room_id, bed_number, joining_date, payment_due_date, payment_status, "
+                    "amount_due_paise, created_by, created_at) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        resident_id,
+                        encrypt_text(name),
+                        encrypt_text(mobile),
+                        encrypt_text(row.aadhaar_last4),
+                        room["id"],
+                        bed_number,
+                        joined.isoformat(),
+                        payment_due.isoformat(),
+                        row.payment_status,
+                        amount_due_paise,
+                        staff["id"],
+                        planned_at,
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A bed or roster row changed while importing. Refresh the resident list and review again.",
+                ) from error
+            occupied.setdefault(room["id"], set()).add(bed_number)
+            assignments.append(
+                {
+                    "id": resident_id,
+                    "name": name,
+                    "room_number": room["room_number"],
+                    "floor_number": room["floor_number"],
+                    "bed_number": bed_number,
+                }
+            )
+            database.write_audit(
+                connection,
+                staff["id"],
+                "resident.checkin",
+                "resident",
+                resident_id,
+                {
+                    "room_id": room["id"],
+                    "room_number": room["room_number"],
+                    "hostel_name": hostel["name"],
+                    "floor_number": room["floor_number"],
+                    "bed_number": bed_number,
+                    "payment_status": row.payment_status,
+                    "amount_due_paise": amount_due_paise,
+                    "payment_due_date": payment_due.isoformat(),
+                    "source": "roster_import",
+                },
+            )
+
+        if errors:
+            raise HTTPException(status_code=422, detail="Import blocked: " + " ".join(errors))
+
+        try:
+            connection.execute(
+                "INSERT INTO resident_roster_imports (id, hostel_id, imported_by, imported_at, imported_count) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (import_id, payload.hostel_id, staff["id"], now_text, len(assignments)),
+            )
+        except sqlite3.IntegrityError as error:
+            raise HTTPException(
+                status_code=409,
+                detail="Another roster import was completed for this hostel. Refresh and verify the resident list.",
+            ) from error
+        database.write_audit(
+            connection,
+            staff["id"],
+            "resident.roster_import",
+            "hostel",
+            payload.hostel_id,
+            {"import_id": import_id, "imported_count": len(assignments)},
+        )
+
+    return {"import_id": import_id, "imported_count": len(assignments), "assignments": assignments}
+
+
+@app.post("/api/residents/{resident_id}/documents", status_code=201)
+async def upload_resident_document(
+    resident_id: str,
+    kind: Literal["person_photo", "aadhaar_photo"] = Form(),
+    document: UploadFile = File(...),
+    staff: dict[str, str] = Depends(require_write),
+) -> dict[str, str]:
+    label = "Person photo" if kind == "person_photo" else "Aadhaar photo"
+    image = await read_required_image(document, label)
+    with database.read_connection() as connection:
+        resident = connection.execute(
+            "SELECT resident.id FROM residents resident "
+            "JOIN rooms room ON room.id = resident.room_id JOIN floors floor ON floor.id = room.floor_id "
+            "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+            "WHERE resident.id = ? AND resident.checked_out_at IS NULL AND hostel.owner_id = ?",
+            (resident_id, staff["owner_id"]),
+        ).fetchone()
+        if not resident:
+            raise HTTPException(status_code=404, detail="Active resident not found.")
+        if connection.execute(
+            "SELECT 1 FROM documents WHERE resident_id = ? AND kind = ?",
+            (resident_id, kind),
+        ).fetchone():
+            raise HTTPException(status_code=409, detail=f"{label} is already stored for this resident.")
+
+    contents, media_type = image
+    encrypted_path = save_encrypted_document(contents)
+    document_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc).isoformat()
+    try:
+        with database.transaction() as connection:
+            resident = connection.execute(
+                "SELECT resident.id FROM residents resident "
+                "JOIN rooms room ON room.id = resident.room_id JOIN floors floor ON floor.id = room.floor_id "
+                "JOIN hostels hostel ON hostel.id = floor.hostel_id "
+                "WHERE resident.id = ? AND resident.checked_out_at IS NULL AND hostel.owner_id = ?",
+                (resident_id, staff["owner_id"]),
+            ).fetchone()
+            if not resident:
+                raise HTTPException(status_code=404, detail="Active resident not found.")
+            connection.execute(
+                "INSERT INTO documents (id, resident_id, kind, encrypted_path, media_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (document_id, resident_id, kind, encrypted_path, media_type, created_at),
+            )
+            database.write_audit(
+                connection,
+                staff["id"],
+                "document.upload",
+                "document",
+                document_id,
+                {"resident_id": resident_id, "kind": kind},
+            )
+    except sqlite3.IntegrityError as error:
+        try:
+            remove_encrypted_document(encrypted_path)
+        except Exception:
+            logger.exception("Could not remove an unreferenced resident document.")
+        raise HTTPException(status_code=409, detail=f"{label} could not be saved; refresh and try again.") from error
+    except Exception:
+        try:
+            remove_encrypted_document(encrypted_path)
+        except Exception:
+            logger.exception("Could not remove an unreferenced resident document.")
+        raise
+    return {"id": document_id}
 
 
 @app.patch("/api/residents/{resident_id}/whatsapp-consent")

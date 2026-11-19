@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS residents (
     payment_due_date TEXT NOT NULL,
     payment_status TEXT NOT NULL CHECK (payment_status IN ('paid', 'unpaid')),
     amount_due_paise INTEGER NOT NULL DEFAULT 0 CHECK (amount_due_paise >= 0),
+    aadhaar_last4_only INTEGER NOT NULL DEFAULT 0 CHECK (aadhaar_last4_only IN (0, 1)),
     whatsapp_opt_in INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_opt_in IN (0, 1)),
     created_by TEXT NOT NULL REFERENCES staff(id),
     created_at TEXT NOT NULL,
@@ -127,6 +128,13 @@ CREATE TABLE IF NOT EXISTS residents (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS active_bed_assignment
 ON residents(room_id, bed_number) WHERE checked_out_at IS NULL;
+CREATE TABLE IF NOT EXISTS resident_roster_imports (
+    id TEXT PRIMARY KEY,
+    hostel_id TEXT NOT NULL UNIQUE REFERENCES hostels(id),
+    imported_by TEXT NOT NULL REFERENCES staff(id),
+    imported_at TEXT NOT NULL,
+    imported_count INTEGER NOT NULL CHECK (imported_count > 0)
+);
 CREATE TABLE IF NOT EXISTS whatsapp_payment_reminders (
     resident_id TEXT NOT NULL REFERENCES residents(id) ON DELETE CASCADE,
     sent_date TEXT NOT NULL,
@@ -494,6 +502,14 @@ def initialize_database() -> None:
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (16, ?) ON CONFLICT DO NOTHING",
                 (now,),
             )
+            connection.execute(
+                "ALTER TABLE residents ADD COLUMN IF NOT EXISTS aadhaar_last4_only "
+                "INTEGER NOT NULL DEFAULT 0 CHECK (aadhaar_last4_only IN (0, 1))"
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (17, ?) ON CONFLICT DO NOTHING",
+                (now,),
+            )
         return
     with read_connection() as connection:
         existing_tables = {
@@ -852,6 +868,22 @@ def initialize_database() -> None:
                 )
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (16, ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
+                )
+            migration_seventeen = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 17"
+            ).fetchone()
+            if not migration_seventeen:
+                resident_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(residents)").fetchall()
+                }
+                if "aadhaar_last4_only" not in resident_columns:
+                    connection.execute(
+                        "ALTER TABLE residents ADD COLUMN aadhaar_last4_only INTEGER NOT NULL DEFAULT 0 "
+                        "CHECK (aadhaar_last4_only IN (0, 1))"
+                    )
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (17, ?)",
                     (datetime.now(timezone.utc).isoformat(),),
                 )
             connection.execute(

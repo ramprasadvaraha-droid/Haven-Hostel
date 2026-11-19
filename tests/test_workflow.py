@@ -20,7 +20,7 @@ from app import retention as retention_module
 from app.backup import BACKUP_TABLES, create_backup, create_postgres_backup
 from app.database import POSTGRES_SCHEMA, prepare_postgres_statement
 from app.main import app, due_date_after_one_month
-from app.security import decrypt_bytes, encrypt_text, hash_password, password_policy_error, verify_password
+from app.security import decrypt_bytes, decrypt_text, encrypt_text, hash_password, password_policy_error, verify_password
 from app.storage import read_document, save_encrypted_document
 from app.manage import reset_password
 
@@ -147,7 +147,8 @@ def test_floor_metadata_migration_preserves_existing_layout(tmp_path: Path, monk
                 "retention_purging_at",
             ):
                 connection.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
-        connection.execute("DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11, 15, 16)")
+        connection.execute("ALTER TABLE residents DROP COLUMN aadhaar_last4_only")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11, 15, 16, 17)")
     with database.transaction() as connection:
         connection.execute(
             "INSERT INTO staff (id, owner_id, username, password_hash, role, created_at) "
@@ -206,11 +207,14 @@ def test_floor_metadata_migration_preserves_existing_layout(tmp_path: Path, monk
             row[1] for row in connection.execute("PRAGMA table_info(registration_applications)").fetchall()
         }
         migration = connection.execute("SELECT 1 FROM schema_migrations WHERE version = 16").fetchone()
+        roster_migration = connection.execute("SELECT 1 FROM schema_migrations WHERE version = 17").fetchone()
     assert "emergency_contact_relationship_ciphertext" in resident_columns
     assert "retention_purging_at" in resident_columns
     assert "emergency_contact_relationship_ciphertext" in application_columns
     assert "retention_purging_at" in application_columns
     assert migration
+    assert "aadhaar_last4_only" in resident_columns
+    assert roster_migration
 
 
 def test_dashboard_returns_five_latest_checkins_and_checkouts(logged_in_client):
@@ -555,6 +559,141 @@ def test_add_resident_requires_all_details_and_both_photos(logged_in_client):
             headers=headers,
         )
         assert missing_upload.status_code == 422
+
+
+def test_roster_import_is_atomic_one_time_and_keeps_aadhaar_partial(logged_in_client):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    payload = {
+        "hostel_id": "test-hostel",
+        "rows": [
+            {
+                "name": "Existing Resident One",
+                "room_number": "101",
+                "mobile": "9876543210",
+                "aadhaar_last4": "1234",
+                "joining_date": "2026-03-01",
+                "payment_status": "paid",
+                "amount_due": 0,
+            },
+            {
+                "name": "Existing Resident Two",
+                "room_number": "101",
+                "mobile": "9876543212",
+                "aadhaar_last4": "5678",
+                "joining_date": "2026-03-02",
+                "payment_status": "unpaid",
+                "amount_due": 2500,
+            },
+        ],
+    }
+
+    missing_csrf = client.post("/api/residents/roster-import", json=payload)
+    assert missing_csrf.status_code == 403
+    imported = client.post("/api/residents/roster-import", json=payload, headers=headers)
+    assert imported.status_code == 201
+    assert [row["bed_number"] for row in imported.json()["assignments"]] == [1, 2]
+    resident_id = imported.json()["assignments"][0]["id"]
+
+    dashboard = client.get("/api/dashboard").json()
+    resident = next(item for item in dashboard["residents"] if item["id"] == resident_id)
+    assert resident["aadhaar_last4"] == "1234"
+    assert resident["aadhaar_is_partial"] is True
+    assert resident["documents"] == []
+    details = client.get(f"/api/residents/{resident_id}").json()
+    assert details["aadhaar"] == ""
+    assert details["aadhaar_last4"] == "1234"
+    assert details["aadhaar_is_partial"] is True
+
+    with database.read_connection() as connection:
+        stored = connection.execute(
+            "SELECT aadhaar_ciphertext, aadhaar_last4_only FROM residents WHERE id = ?",
+            (resident_id,),
+        ).fetchone()
+        marker = connection.execute(
+            "SELECT imported_count FROM resident_roster_imports WHERE hostel_id = ?",
+            ("test-hostel",),
+        ).fetchone()
+        audit = connection.execute(
+            "SELECT details_json FROM audit_log WHERE action = 'resident.roster_import' AND entity_id = ?",
+            ("test-hostel",),
+        ).fetchone()
+    assert decrypt_text(stored["aadhaar_ciphertext"]) == "1234"
+    assert stored["aadhaar_last4_only"] == 1
+    assert marker["imported_count"] == 2
+    assert audit and "1234" not in audit["details_json"]
+
+    retry = client.post("/api/residents/roster-import", json=payload, headers=headers)
+    assert retry.status_code == 409
+
+    uploaded = client.post(
+        f"/api/residents/{resident_id}/documents",
+        data={"kind": "person_photo"},
+        files={"document": ("person.png", PERSON_PNG, "image/png")},
+        headers=headers,
+    )
+    assert uploaded.status_code == 201
+    assert client.get(f"/api/residents/{resident_id}").json()["documents"][0]["kind"] == "person_photo"
+
+
+def test_roster_import_rejects_duplicate_capacity_cross_owner_and_full_aadhaar(logged_in_client):
+    client, csrf = logged_in_client
+    headers = {"X-CSRF-Token": csrf}
+    rows = [
+        {
+            "name": f"Resident {index}",
+            "room_number": "101",
+            "mobile": f"98765432{index:02d}",
+            "aadhaar_last4": f"{index:04d}",
+            "joining_date": "2026-03-01",
+            "payment_status": "paid",
+            "amount_due": 0,
+        }
+        for index in range(6)
+    ]
+    rows[1]["mobile"] = rows[0]["mobile"]
+    response = client.post(
+        "/api/residents/roster-import",
+        json={"hostel_id": "test-hostel", "rows": rows},
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert "mobile number is already assigned" in response.json()["detail"]
+    assert "no unoccupied beds" in response.json()["detail"]
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM residents").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM resident_roster_imports").fetchone()[0] == 0
+
+    full_aadhaar = {
+        "hostel_id": "test-hostel",
+        "rows": [{
+            "name": "Resident",
+            "room_number": "101",
+            "mobile": "9876543210",
+            "aadhaar_last4": "1234",
+            "aadhaar": "123456789012",
+            "joining_date": "2026-03-01",
+            "payment_status": "paid",
+        }],
+    }
+    assert client.post("/api/residents/roster-import", json=full_aadhaar, headers=headers).status_code == 422
+
+    with database.transaction() as connection:
+        connection.execute(
+            "INSERT INTO staff (id, owner_id, username, password_hash, role, created_at) "
+            "VALUES (?, ?, ?, ?, 'admin', ?)",
+            ("other-owner", "other-owner", "other-owner", hash_password("Other-owner-password1!"), "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO hostels (id, owner_id, name, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("other-hostel", "other-owner", "Other Hostel", "other-owner", "2026-01-01T00:00:00+00:00"),
+        )
+    cross_owner = client.post(
+        "/api/residents/roster-import",
+        json={"hostel_id": "other-hostel", "rows": [rows[0]]},
+        headers=headers,
+    )
+    assert cross_owner.status_code == 404
 
 
 def test_joiner_registration_invite_review_and_approval(logged_in_client):
@@ -1447,6 +1586,46 @@ def test_platform_forgot_password_sends_single_use_email_code_and_revokes_sessio
     ).status_code == 200
 
 
+def test_platform_forgot_password_accepts_recovery_email_as_identifier(logged_in_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = logged_in_client
+    login_platform(client)
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE platform_accounts SET recovery_email = ? WHERE username = ?",
+            ("developer@example.com", "developer"),
+        )
+    monkeypatch.setattr(config, "HOSTEL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(config, "HOSTEL_SMTP_FROM", "no-reply@example.com")
+    sent_messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "app.main.send_platform_password_reset_code",
+        lambda email, code: sent_messages.append((email, code)),
+    )
+
+    requested = client.post(
+        "/api/platform/password/forgot",
+        json={"username": "DEVELOPER@example.com"},
+    )
+    assert requested.status_code == 200
+    assert len(sent_messages) == 1
+    assert sent_messages[0][0] == "developer@example.com"
+
+    reset = client.post(
+        "/api/platform/password/reset",
+        json={
+            "username": "DEVELOPER@example.com",
+            "code": sent_messages[0][1],
+            "password": "Reset-password4!",
+        },
+    )
+    assert reset.status_code == 200
+    assert reset.json()["username"] == "developer"
+    assert client.post(
+        "/api/platform/session",
+        json={"username": "developer", "password": "Reset-password4!"},
+    ).status_code == 200
+
+
 def test_platform_forgot_password_requires_mail_configuration(logged_in_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = logged_in_client
     monkeypatch.setattr(config, "HOSTEL_SMTP_HOST", "")
@@ -1456,6 +1635,35 @@ def test_platform_forgot_password_requires_mail_configuration(logged_in_client, 
 
     assert response.status_code == 503
     assert "not configured" in response.json()["detail"].lower()
+
+
+def test_send_platform_password_reset_code_sends_email_without_other_context(monkeypatch: pytest.MonkeyPatch):
+    sent_messages = []
+
+    class FakeSMTP:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def send_message(self, message):
+            sent_messages.append(message)
+
+    monkeypatch.setattr(config, "HOSTEL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(config, "HOSTEL_SMTP_PORT", 465)
+    monkeypatch.setattr(config, "HOSTEL_SMTP_FROM", "no-reply@example.com")
+    monkeypatch.setattr(config, "HOSTEL_SMTP_USE_SSL", True)
+    monkeypatch.setattr(config, "HOSTEL_SMTP_USERNAME", "")
+    monkeypatch.setattr("app.main.smtplib.SMTP_SSL", FakeSMTP)
+
+    main_module.send_platform_password_reset_code("developer@example.com", "12345678")
+
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["To"] == "developer@example.com"
 
 
 def test_cli_password_reset_updates_hash_and_revokes_sessions(logged_in_client, monkeypatch: pytest.MonkeyPatch):

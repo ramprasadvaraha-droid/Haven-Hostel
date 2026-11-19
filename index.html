@@ -62,6 +62,10 @@
     .service-item h3 { margin: 17px 0 7px; color: #273b2f; font: 700 13px var(--display); }
     .service-item p { max-width: 230px; margin: 0; color: #69756d; font-size: 11px; line-height: 1.6; }
     .landing-footer { padding: 20px clamp(20px, 8vw, 120px); display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #748078; background: #f7f8f4; font-size: 10px; }
+    .landing-contact { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 14px; }
+    .landing-contact-label { color: #46564b; font-weight: 700; }
+    .landing-contact a { color: var(--green-dark); font-weight: 600; text-decoration: none; }
+    .landing-contact a:hover { text-decoration: underline; }
     .portal-back { margin: 16px 0 0; padding: 0; border: 0; color: var(--green); background: none; font-size: 11px; font-weight: 700; }
     .platform-app { min-height: 100vh; background: var(--paper); }
     .platform-topbar { min-height: 66px; padding: 10px clamp(17px, 4vw, 48px); display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); background: #fbfbf8; }
@@ -302,6 +306,18 @@
     .resident-detail dt { color: var(--muted); font-size: 10px; font-weight: 700; }
     .resident-detail dd { margin: 4px 0 0; color: var(--ink); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .resident-detail-wide { grid-column: 1 / -1; }
+    .roster-review { padding: 0 14px 14px; }
+    .roster-import-table { min-width: 1120px; }
+    .roster-import-table input, .roster-import-table select { min-width: 115px; max-width: 175px; padding: 7px; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+    .roster-import-table .roster-row-preview { min-width: 190px; white-space: normal; line-height: 1.45; }
+    .roster-import-table .roster-row-invalid { color: #a43f2e; }
+    .roster-import-table .roster-row-valid { color: var(--green-dark); }
+    .roster-remove-row { padding: 5px 8px; border: 1px solid #ead6ce; border-radius: 4px; color: #a35137; background: white; }
+    .roster-import-actions { padding: 14px 0 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+    #roster-import-status { padding: 0 14px; }
+    #resident-document-uploads { margin-top: 16px; }
+    .resident-document-upload { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+    .resident-document-upload .field { flex: 1 1 240px; }
     .whatsapp-button, .mark-paid-button { padding: 5px 8px; border: 1px solid #d8e6da; border-radius: 4px; color: var(--green-dark); background: #f2f7f2; font-size: 10px; font-weight: 700; }
     .whatsapp-button:hover, .mark-paid-button:hover { background: #e5f0e6; }
     .consent-toggle { margin-top: 5px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--green-dark); background: white; font-size: 10px; font-weight: 600; }
@@ -444,6 +460,7 @@
     .booking-actions { display: flex; align-items: center; gap: 6px; }
     .registration-tools, .registration-link-row { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 14px; }
     .registration-tools .field { width: min(320px, 100%); }
+    .registration-tools > button { min-height: 38px; }
     .registration-link-row { align-items: center; border-top: 1px solid var(--line); }
     .registration-link-row input { min-width: min(320px, 100%); flex: 1; }
     .registration-list { padding: 14px; display: grid; gap: 10px; }
@@ -640,7 +657,7 @@
         <article class="service-item"><span class="service-index">VACANCIES</span><h3>Vacancy QR code</h3><p>Create a QR code that lets visitors ask about vacancies on WhatsApp.</p></article>
       </div>
     </section>
-    <footer class="landing-footer"><span>Haven Hostel · Hostel operations</span><button class="portal-back" type="button" data-open-portal="developer">Platform sign in</button></footer>
+    <footer class="landing-footer"><span>Haven Hostel · Hostel operations</span><div class="landing-contact" aria-label="Contact Haven Hostel"><span class="landing-contact-label">Contact</span><a href="mailto:hello@arvzen.com">hello@arvzen.com</a><a href="tel:+917993862543">+91 7993862543</a></div><button class="portal-back" type="button" data-open-portal="developer">Platform sign in</button></footer>
   </section>
 
   <section class="login-screen" id="login-screen" aria-labelledby="login-title" hidden>
@@ -683,13 +700,13 @@
         <h1 id="platform-reset-title">Reset Employer password.</h1>
         <p class="login-copy">We will send a one-time code to the recovery email on your account.</p>
         <form id="platform-reset-request-form">
-          <div class="login-field"><label for="reset-request-username">Employer username</label><input id="reset-request-username" name="username" autocomplete="username" required maxlength="40"></div>
+          <div class="login-field"><label for="reset-request-username">Employer username or recovery email</label><input id="reset-request-username" name="username" autocomplete="username" required maxlength="254"></div>
           <p class="login-error" id="platform-reset-request-error" role="alert" hidden></p>
           <p class="credentials-note" id="platform-reset-request-message" role="status" hidden></p>
           <button class="primary-button login-submit" type="submit">Send reset code</button>
         </form>
         <form id="platform-reset-confirm-form" hidden>
-          <div class="login-field"><label for="reset-confirm-username">Employer username</label><input id="reset-confirm-username" name="username" readonly required maxlength="40"></div>
+          <div class="login-field"><label for="reset-confirm-username">Employer username or recovery email</label><input id="reset-confirm-username" name="username" readonly required maxlength="254"></div>
           <div class="login-field"><label for="platform-reset-code">8-digit email code</label><input id="platform-reset-code" name="code" inputmode="numeric" pattern="[0-9]{8}" required maxlength="8" autocomplete="one-time-code"></div>
           <div class="login-field"><label for="platform-reset-password">New password</label><input id="platform-reset-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="200" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\s]).{8,200}" title="Use 8+ characters with uppercase, lowercase, a number, and a special character."><div class="field-help">At least 8 characters with uppercase, lowercase, a number, and a special character.</div></div>
           <div class="login-field"><label for="platform-reset-confirm-password">Confirm new password</label><input id="platform-reset-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required minlength="8" maxlength="200"></div>
@@ -756,6 +773,22 @@
 
       <section class="page-view" id="residents-view" hidden>
         <div class="heading-row"><div><p class="eyebrow">Residents</p><h1>Residents</h1><div class="date">View current stays and manage check-ins and check-outs.</div></div><div class="heading-actions"><button class="secondary-button" id="send-payment-reminders" type="button" data-admin-only>Send reminders</button><button class="primary-button open-join" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Add resident</button></div></div>
+        <section class="section" id="roster-import-section" hidden aria-labelledby="roster-import-title">
+          <div class="section-head"><div><h2 class="section-title" id="roster-import-title">Import existing residents</h2><div class="section-subtitle">Import an existing paper roster once for each hostel.</div></div></div>
+          <p class="field-help">OCR runs in this browser on your device. The scan and recognized text are not uploaded. Only the rows you review and confirm are sent to this hostel.</p>
+          <div class="registration-tools">
+            <div class="field"><label for="roster-import-hostel">Hostel</label><select id="roster-import-hostel"></select></div>
+            <div class="field"><label for="roster-import-image">Roster photo or scan</label><input id="roster-import-image" type="file" accept="image/jpeg,image/png,image/webp"></div>
+            <button class="secondary-button" id="roster-read-image" type="button">Read roster on this device</button>
+            <button class="secondary-button" id="roster-add-row-manual" type="button">Add rows manually</button>
+          </div>
+          <p class="field-help" id="roster-import-status" role="status">Choose an image to begin. You can also add rows manually.</p>
+          <div class="roster-review" id="roster-import-review" hidden>
+            <div class="section-head"><div><h3 class="section-title">Review every row</h3><div class="section-subtitle">Correct OCR results, add joining/payment details, and confirm the bed preview before saving.</div></div><button class="secondary-button" id="roster-add-row" type="button">Add row</button></div>
+            <div class="table-scroll"><table class="roster-import-table"><thead><tr><th>Name</th><th>Room</th><th>Mobile</th><th>Aadhaar last 4</th><th>Joining date</th><th>Payment</th><th>Balance (INR)</th><th>Bed preview / validation</th><th></th></tr></thead><tbody id="roster-import-rows"></tbody></table></div>
+            <div class="form-actions"><div class="form-error" id="roster-import-error" role="alert" hidden></div><button class="primary-button" id="confirm-roster-import" type="button" disabled>Confirm and import residents</button></div>
+          </div>
+        </section>
         <section class="section">
           <div class="section-head"><div><h2 class="section-title">Current residents</h2><div class="section-subtitle" id="resident-count-all">No active residents</div></div><div class="table-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5" stroke-linecap="round"/></svg><input class="search" id="resident-search-all" type="search" placeholder="Find a resident" aria-label="Find a resident"></div></div></div><div id="resident-table-all"></div>
         </section>
@@ -869,7 +902,7 @@
   <div class="modal-backdrop" id="resident-details-modal" hidden>
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="resident-details-title">
       <div class="modal-head"><div><h2 id="resident-details-title">Resident details</h2><p>Resident information and assigned stay.</p></div><button class="close-button" type="button" data-close-resident-details aria-label="Close resident details">×</button></div>
-      <div class="form-body"><dl class="resident-details-grid" id="resident-details-content"></dl></div>
+      <div class="form-body"><dl class="resident-details-grid" id="resident-details-content"></dl><div id="resident-document-uploads"></div></div>
     </section>
   </div>
   <div class="modal-backdrop" id="room-charges-modal" hidden>

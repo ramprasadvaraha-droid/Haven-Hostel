@@ -6,10 +6,15 @@ from dotenv import load_dotenv
 from app.setup import ensure_environment_file
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-for environment_file in (".env.production.local", ".env.local", ".env"):
+VERCEL_DEPLOYMENT = os.environ.get("VERCEL", "").lower() == "1"
+environment_files = (
+    (".env.production.local", ".env.local", ".env")
+    if VERCEL_DEPLOYMENT
+    else (".env.local", ".env")
+)
+for environment_file in environment_files:
     load_dotenv(ROOT_DIR / environment_file, override=True)
 
-VERCEL_DEPLOYMENT = os.environ.get("VERCEL", "").lower() == "1"
 DEFAULT_DATA_DIR = Path("/tmp/hostel-data") if VERCEL_DEPLOYMENT else ROOT_DIR / "data"
 DATA_DIR = Path(os.environ.get("HOSTEL_DATA_DIR", DEFAULT_DATA_DIR)).resolve()
 DATABASE_PATH = DATA_DIR / "hostel.sqlite3"
@@ -32,12 +37,26 @@ WHATSAPP_BROADCAST_LANGUAGE = os.environ.get("WHATSAPP_BROADCAST_LANGUAGE", "en"
 WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "").strip()
 WHATSAPP_BUSINESS_NUMBER = os.environ.get("WHATSAPP_BUSINESS_NUMBER", "").strip().lstrip("+")
 WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION", "v22.0").strip()
-HOSTEL_SMTP_HOST = os.environ.get("HOSTEL_SMTP_HOST", "").strip()
-HOSTEL_SMTP_PORT = int(os.environ.get("HOSTEL_SMTP_PORT", "587"))
-HOSTEL_SMTP_USERNAME = os.environ.get("HOSTEL_SMTP_USERNAME", "").strip()
-HOSTEL_SMTP_PASSWORD = os.environ.get("HOSTEL_SMTP_PASSWORD", "")
-HOSTEL_SMTP_FROM = os.environ.get("HOSTEL_SMTP_FROM", "").strip()
-HOSTEL_SMTP_USE_SSL = os.environ.get("HOSTEL_SMTP_USE_SSL", "false").lower() == "true"
+HOSTEL_SMTP_HOST = os.environ.get("HOSTEL_SMTP_HOST", os.environ.get("SMTP_HOST", "")).strip()
+HOSTEL_SMTP_PORT = int(
+    os.environ.get("HOSTEL_SMTP_PORT", os.environ.get("SMTP_PORT", "587"))
+)
+HOSTEL_SMTP_USERNAME = os.environ.get(
+    "HOSTEL_SMTP_USERNAME",
+    os.environ.get("SMTP_USERNAME", ""),
+).strip()
+HOSTEL_SMTP_PASSWORD = os.environ.get(
+    "HOSTEL_SMTP_PASSWORD",
+    os.environ.get("SMTP_PASSWORD", ""),
+)
+HOSTEL_SMTP_FROM = os.environ.get(
+    "HOSTEL_SMTP_FROM",
+    os.environ.get("SMTP_FROM", ""),
+).strip()
+HOSTEL_SMTP_USE_SSL = os.environ.get(
+    "HOSTEL_SMTP_USE_SSL",
+    os.environ.get("SMTP_USE_SSL", "false"),
+).lower() == "true"
 
 
 def encryption_key() -> bytes:

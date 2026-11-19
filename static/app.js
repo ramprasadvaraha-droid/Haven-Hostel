@@ -15,6 +15,7 @@
   const joinModal = $('#join-modal');
   const residentDetailsModal = $('#resident-details-modal');
   const residentDetailsContent = $('#resident-details-content');
+  const residentDocumentUploads = $('#resident-document-uploads');
   const roomChargesModal = $('#room-charges-modal');
   const platformPasswordChangeModal = $('#platform-password-change-modal');
   const roomSelect = $('#room-select');
@@ -27,6 +28,8 @@
   const purposeOtherInput = $('#purpose-other-input');
   const purposeOtherField = $('#purpose-other-field');
   const state = { user: null, summary: null, rooms: [], residents: [], activity: [], bookings: null, newBookingIds: new Set(), platform: null, roomTypeCharges: [], roomChargeExtraShareCounts: {}, registrations: null, whatsappBroadcastStatus: null };
+  let rosterImportRows = [];
+  let tesseractScriptPromise;
   let csrfToken = '';
   let platformCsrfToken = '';
   let selectedPlatformHostelId = '';
@@ -197,6 +200,7 @@
     $('#send-payment-reminders').hidden = layoutLocked || user.role !== 'admin';
     $('#registration-admin-section').hidden = user.role !== 'admin';
     $('#registration-applications-section').hidden = user.role !== 'admin';
+    $('#roster-import-section').hidden = layoutLocked || user.role !== 'admin';
     $('.side-note').hidden = layoutLocked;
     if (layoutLocked) setActiveView('rooms');
     platformApp.hidden = true;
@@ -443,7 +447,9 @@
       ['Full name', resident.name],
       ['Mobile number', resident.mobile],
       ['Emergency contact', emergencyContact],
-      ['Aadhaar number', resident.aadhaar || 'Not recorded'],
+      ['Aadhaar number', resident.aadhaar_is_partial
+        ? `Last four digits only: ${resident.aadhaar_last4}`
+        : (resident.aadhaar || 'Not recorded')],
       ['Purpose of stay', resident.purpose_of_stay || 'Not recorded'],
       ['Workplace/college address', resident.office_address || 'Not recorded', true],
       ['Hostel', resident.hostel_name],
@@ -460,6 +466,20 @@
     residentDetailsContent.innerHTML = details.map(([label, value, wide]) =>
       `<div class="resident-detail${wide ? ' resident-detail-wide' : ''}"><dt>${escapeHTML(label)}</dt><dd>${escapeHTML(value)}</dd></div>`
     ).join('') + `<div class="resident-detail resident-detail-wide"><dt>Documents</dt><dd>${documents}</dd></div>`;
+    const storedKinds = new Set((resident.documents || []).map(document => document.kind));
+    const missingDocuments = [
+      ['person_photo', 'Person photo'],
+      ['aadhaar_photo', 'Aadhaar photo'],
+    ].filter(([kind]) => !storedKinds.has(kind));
+    residentDocumentUploads.innerHTML = missingDocuments.length
+      ? `<p class="field-help">Add missing resident photos later. Uploads are encrypted in the configured private document storage.</p>${missingDocuments.map(([kind, label]) => `
+        <form class="resident-document-upload" data-resident-document-upload data-resident-id="${escapeHTML(resident.id)}">
+          <input type="hidden" name="kind" value="${kind}">
+          <div class="field"><label>${label}<input type="file" name="document" accept="image/jpeg,image/png,image/webp" required></label></div>
+          <button class="secondary-button" type="submit">Upload ${label.toLowerCase()}</button>
+          <span class="field-help" data-upload-status role="status"></span>
+        </form>`).join('')}`
+      : '<p class="field-help">All resident photos are stored.</p>';
     residentDetailsModal.hidden = false;
     residentDetailsModal.querySelector('[data-close-resident-details]').focus();
   }
@@ -492,6 +512,238 @@
     reminderButton.title = state.whatsappBroadcastStatus?.reason || 'Only unpaid residents who opted in to WhatsApp are included.';
     $('#resident-table').innerHTML = residentRows($('#resident-search').value);
     $('#resident-table-all').innerHTML = residentRows($('#resident-search-all').value);
+  }
+
+  function newRosterRow(fields = {}) {
+    return {
+      name: fields.name || '',
+      room_number: fields.room_number || '',
+      mobile: fields.mobile || '',
+      aadhaar_last4: fields.aadhaar_last4 || '',
+      joining_date: '',
+      payment_status: '',
+      amount_due: '',
+    };
+  }
+
+  function renderRosterImport() {
+    const section = $('#roster-import-section');
+    const layoutLocked = ownerLayoutNeedsSetup();
+    section.hidden = state.user?.role !== 'admin' || layoutLocked || !state.hostels.length;
+    if (section.hidden) return;
+
+    const eligibleHostels = state.hostels.filter(hostel => !hostel.roster_imported_at);
+    const tools = section.querySelector('.registration-tools');
+    tools.hidden = !eligibleHostels.length;
+    if (!eligibleHostels.length) {
+      rosterImportRows = [];
+      $('#roster-import-status').textContent = 'The one-time roster import is complete for every hostel.';
+      $('#roster-import-review').hidden = true;
+      return;
+    }
+
+    const select = $('#roster-import-hostel');
+    const previousHostel = select.value;
+    if (previousHostel && !eligibleHostels.some(hostel => hostel.id === previousHostel)) {
+      rosterImportRows = [];
+      $('#roster-import-review').hidden = true;
+    }
+    select.innerHTML = eligibleHostels
+      .map(hostel => `<option value="${escapeHTML(hostel.id)}">${escapeHTML(hostel.name)}</option>`)
+      .join('');
+    if (eligibleHostels.some(hostel => hostel.id === previousHostel)) select.value = previousHostel;
+    $('#roster-import-status').textContent = 'Choose a scan to read it on this device, or add rows manually. Import is final after confirmation.';
+    updateRosterAssignments();
+  }
+
+  function renderRosterRows() {
+    const tbody = $('#roster-import-rows');
+    tbody.innerHTML = rosterImportRows.map((row, index) => `
+      <tr data-roster-row="${index}">
+        <td><input data-roster-field="name" aria-label="Row ${index + 1} resident name" maxlength="80" value="${escapeHTML(row.name)}"></td>
+        <td><input data-roster-field="room_number" aria-label="Row ${index + 1} room number" maxlength="20" value="${escapeHTML(row.room_number)}"></td>
+        <td><input data-roster-field="mobile" aria-label="Row ${index + 1} mobile number" type="tel" inputmode="tel" maxlength="20" value="${escapeHTML(row.mobile)}"></td>
+        <td><input data-roster-field="aadhaar_last4" aria-label="Row ${index + 1} Aadhaar last four digits" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${escapeHTML(row.aadhaar_last4)}"></td>
+        <td><input data-roster-field="joining_date" aria-label="Row ${index + 1} joining date" type="date" value="${escapeHTML(row.joining_date)}"></td>
+        <td><select data-roster-field="payment_status" aria-label="Row ${index + 1} payment status"><option value="">Select</option><option value="paid"${row.payment_status === 'paid' ? ' selected' : ''}>Paid</option><option value="unpaid"${row.payment_status === 'unpaid' ? ' selected' : ''}>Unpaid</option></select></td>
+        <td><input data-roster-field="amount_due" aria-label="Row ${index + 1} outstanding balance in rupees" type="number" min="0.01" max="1000000" step="0.01" ${row.payment_status !== 'unpaid' ? 'disabled' : ''} value="${escapeHTML(row.amount_due)}"></td>
+        <td class="roster-row-preview" data-roster-preview="${index}"></td>
+        <td><button class="roster-remove-row" type="button" data-roster-remove="${index}" aria-label="Remove row ${index + 1}">Remove</button></td>
+      </tr>
+    `).join('');
+    $('#roster-import-review').hidden = false;
+    updateRosterAssignments();
+  }
+
+  function normalizedRosterMobile(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (/^[6-9]\d{9}$/.test(digits)) return `+91${digits}`;
+    if (/^0[6-9]\d{9}$/.test(digits)) return `+91${digits.slice(1)}`;
+    if (/^91[6-9]\d{9}$/.test(digits)) return `+${digits}`;
+    if (digits.length >= 10 && digits.length <= 15) return `+${digits}`;
+    return '';
+  }
+
+  function updateRosterAssignments() {
+    const hostelId = $('#roster-import-hostel').value;
+    const allocatedBeds = new Map();
+    const seenMobiles = new Set();
+    const existingMobiles = new Set(state.residents
+      .filter(resident => resident.hostel_id === hostelId)
+      .map(resident => normalizedRosterMobile(resident.mobile)));
+    let allValid = rosterImportRows.length > 0;
+
+    rosterImportRows.forEach((row, index) => {
+      const errors = [];
+      if (!row.name.trim()) errors.push('Name required');
+      const mobile = normalizedRosterMobile(row.mobile);
+      if (!mobile) errors.push('Valid mobile required');
+      else if (existingMobiles.has(mobile) || seenMobiles.has(mobile)) errors.push('Duplicate mobile');
+      if (mobile) seenMobiles.add(mobile);
+      if (!/^\d{4}$/.test(row.aadhaar_last4)) errors.push('Enter exactly four Aadhaar digits');
+      if (!row.joining_date) errors.push('Joining date required');
+      if (!row.payment_status) errors.push('Payment status required');
+      const balance = Number(row.amount_due);
+      if (row.payment_status === 'unpaid' && (!Number.isFinite(balance) || balance <= 0 || balance > 1000000)) {
+        errors.push('Balance required for unpaid');
+      }
+      if (row.payment_status === 'paid' && row.amount_due && Number(row.amount_due) !== 0) {
+        errors.push('Paid resident cannot have a balance');
+      }
+
+      const matchingRooms = state.rooms.filter(room =>
+        room.hostel_id === hostelId && room.room_number.toLowerCase() === row.room_number.trim().toLowerCase());
+      let assignment = null;
+      if (!row.room_number.trim()) errors.push('Room required');
+      else if (!matchingRooms.length) errors.push('Room not found in this hostel');
+      else if (matchingRooms.length > 1) errors.push('Room number is ambiguous across floors');
+      else {
+        const room = matchingRooms[0];
+        if (room.reserved) errors.push('Room is reserved for a visit');
+        else {
+          const used = allocatedBeds.get(room.id) || new Set();
+          const bed = room.beds.find(item => !item.occupied && !item.reserved && !used.has(item.number));
+          if (!bed) errors.push('No available bed in this room');
+          else {
+            used.add(bed.number);
+            allocatedBeds.set(room.id, used);
+            assignment = { room, bed: bed.number };
+          }
+        }
+      }
+
+      const preview = document.querySelector(`[data-roster-preview="${index}"]`);
+      if (preview) {
+        preview.classList.toggle('roster-row-invalid', errors.length > 0);
+        preview.classList.toggle('roster-row-valid', errors.length === 0);
+        preview.textContent = errors.length
+          ? errors.join('; ')
+          : `Room ${assignment.room.room_number} · ${floorLabel(assignment.room.floor_number)} · Bed ${assignment.bed}`;
+      }
+      if (errors.length) allValid = false;
+    });
+
+    const confirmButton = $('#confirm-roster-import');
+    confirmButton.disabled = !allValid;
+  }
+
+  function parseRosterText(text) {
+    const parsedRows = [];
+    for (const sourceLine of text.split(/\r?\n/)) {
+      const line = sourceLine.trim();
+      if (!line) continue;
+      const fullAadhaarMatch = line.match(/\b\d{12}\b/);
+      const phoneSource = fullAadhaarMatch ? line.replace(fullAadhaarMatch[0], ' ') : line;
+      const phoneMatch = phoneSource.match(/(?:\+?91[\s.-]*)?[6-9]\d(?:[\s().-]?\d){8}/);
+      const phoneDigits = phoneMatch ? phoneMatch[0].replace(/\D/g, '') : '';
+      const mobile = phoneDigits.length === 12 && phoneDigits.startsWith('91')
+        ? `+${phoneDigits}`
+        : phoneDigits;
+      const labeledAadhaarMatch = line.match(/\b(?:aadhaar|aadhar|uid)\D{0,8}(\d{4})\b/i);
+      const aadhaarLast4 = fullAadhaarMatch
+        ? fullAadhaarMatch[0].slice(-4)
+        : (labeledAadhaarMatch ? labeledAadhaarMatch[1] : '');
+      let roomSource = fullAadhaarMatch
+        ? line.replace(fullAadhaarMatch[0], ' ')
+        : line;
+      if (labeledAadhaarMatch) roomSource = roomSource.replace(labeledAadhaarMatch[0], ' ');
+      if (phoneMatch) roomSource = roomSource.replace(phoneMatch[0], ' ');
+      const labeledRoomMatch = roomSource.match(/\b(?:room|rm)\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9._-]*)/i);
+      const roomMatch = labeledRoomMatch || roomSource.match(/\b\d{2,4}[A-Za-z]?\b/);
+      const roomNumber = labeledRoomMatch ? labeledRoomMatch[1] : (roomMatch ? roomMatch[0] : '');
+      if (!mobile && !fullAadhaarMatch && !labeledAadhaarMatch && !roomMatch) continue;
+      let name = line;
+      if (phoneMatch) name = name.replace(phoneMatch[0], ' ');
+      if (fullAadhaarMatch) name = name.replace(fullAadhaarMatch[0], ' ');
+      if (labeledAadhaarMatch) name = name.replace(labeledAadhaarMatch[0], ' ');
+      if (labeledRoomMatch) name = name.replace(labeledRoomMatch[0], ' ');
+      else if (roomMatch) name = name.replace(roomMatch[0], ' ');
+      name = name.replace(/^\s*\d{1,2}\s+/, '').replace(/[|,;]+/g, ' ').replace(/\s+/g, ' ').trim();
+      parsedRows.push(newRosterRow({ name, room_number: roomNumber, mobile, aadhaar_last4: aadhaarLast4 }));
+    }
+    return parsedRows;
+  }
+
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    if (!tesseractScriptPromise) {
+      tesseractScriptPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js';
+        script.onload = () => window.Tesseract
+          ? resolve(window.Tesseract)
+          : reject(new Error('The on-device OCR library did not load.'));
+        script.onerror = () => {
+          tesseractScriptPromise = null;
+          reject(new Error('Could not download the OCR library. Check your connection and try again.'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return tesseractScriptPromise;
+  }
+
+  async function readRosterImage() {
+    const file = $('#roster-import-image').files[0];
+    if (!file) {
+      $('#roster-import-status').textContent = 'Choose a roster image first, or add rows manually.';
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      $('#roster-import-status').textContent = 'Choose a JPEG, PNG, or WebP scan, or add rows manually.';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      $('#roster-import-status').textContent = 'Choose an image no larger than 5 MB, or add rows manually.';
+      return;
+    }
+    const button = $('#roster-read-image');
+    button.disabled = true;
+    $('#roster-import-status').textContent = 'Loading on-device OCR. The selected image stays in this browser.';
+    let worker;
+    try {
+      const tesseract = await loadTesseract();
+      worker = await tesseract.createWorker('eng', 1, {
+        logger: message => {
+          if (message.status === 'recognizing text') {
+            $('#roster-import-status').textContent = `Reading the image on this device (${Math.round(message.progress * 100)}%).`;
+          }
+        },
+      });
+      const result = await worker.recognize(file);
+      const recognizedText = result.data.text;
+      rosterImportRows = parseRosterText(recognizedText);
+      result.data.text = '';
+      if (!rosterImportRows.length) rosterImportRows = [newRosterRow()];
+      renderRosterRows();
+      $('#roster-import-status').textContent = 'OCR finished locally. Review and correct every row; no scan or raw OCR text was uploaded.';
+      $('#roster-import-image').value = '';
+    } catch (error) {
+      $('#roster-import-status').textContent = `${error.message} You can add the rows manually; the image was not uploaded.`;
+    } finally {
+      if (worker) await worker.terminate();
+      button.disabled = false;
+    }
   }
 
   function renderWhatsAppBroadcast() {
@@ -723,6 +975,7 @@
     showDashboard(dashboard.user);
     renderRooms();
     renderResidents();
+    renderRosterImport();
     renderWhatsAppBroadcast();
     renderActivity();
     renderBookings();
@@ -890,7 +1143,7 @@
     }
     submit.disabled = true;
     try {
-      await apiRequest('/api/platform/password/reset', {
+      const result = await apiRequest('/api/platform/password/reset', {
         method: 'POST',
         body: JSON.stringify({
           username: $('#reset-confirm-username').value,
@@ -898,7 +1151,7 @@
           password,
         }),
       });
-      const username = $('#reset-confirm-username').value;
+      const username = result.username;
       returnToPlatformSignIn('Password reset. Sign in with your new password.');
       $('#developer-username').value = username;
     } catch (error) {
@@ -986,6 +1239,35 @@
 
   document.addEventListener('submit', async event => {
     const form = event.target;
+    if (form.matches('[data-resident-document-upload]')) {
+      event.preventDefault();
+      const submit = form.querySelector('button[type="submit"]');
+      const status = form.querySelector('[data-upload-status]');
+      const residentId = form.dataset.residentId;
+      submit.disabled = true;
+      status.textContent = 'Uploading encrypted photo…';
+      try {
+        await apiRequest(`/api/residents/${encodeURIComponent(residentId)}/documents`, {
+          method: 'POST',
+          body: new FormData(form),
+        });
+      } catch (error) {
+        status.textContent = error.message;
+        return;
+      } finally {
+        submit.disabled = false;
+      }
+      try {
+        await refreshDashboard();
+        const resident = await apiRequest(`/api/residents/${encodeURIComponent(residentId)}`);
+        renderResidentDetails(resident);
+        showToast('Resident photo uploaded securely.');
+      } catch (error) {
+        showToast(`Photo uploaded, but the resident details did not refresh: ${error.message}`);
+      }
+      return;
+    }
+
     if (form.id === 'whatsapp-broadcast-form') {
       event.preventDefault();
       const hostelId = $('#whatsapp-broadcast-hostel').value;
@@ -1392,6 +1674,87 @@
   $('#resident-search-all').addEventListener('input', () => renderResidents());
   $('#whatsapp-broadcast-hostel').addEventListener('change', renderWhatsAppBroadcast);
   $('#whatsapp-broadcast-message').addEventListener('input', renderWhatsAppBroadcast);
+  $('#roster-read-image').addEventListener('click', readRosterImage);
+  $('#roster-import-hostel').addEventListener('change', updateRosterAssignments);
+  $('#roster-add-row-manual').addEventListener('click', () => {
+    rosterImportRows.push(newRosterRow());
+    renderRosterRows();
+  });
+  $('#roster-add-row').addEventListener('click', () => {
+    rosterImportRows.push(newRosterRow());
+    renderRosterRows();
+  });
+  $('#roster-import-rows').addEventListener('input', event => {
+    if (!event.target.matches('[data-roster-field]')) return;
+    const rowElement = event.target.closest('[data-roster-row]');
+    const row = rosterImportRows[Number(rowElement.dataset.rosterRow)];
+    row[event.target.dataset.rosterField] = event.target.value;
+    if (event.target.dataset.rosterField === 'payment_status') {
+      if (row.payment_status !== 'unpaid') row.amount_due = '';
+      const amountInput = rowElement.querySelector('[data-roster-field="amount_due"]');
+      amountInput.disabled = row.payment_status !== 'unpaid';
+      amountInput.value = row.amount_due;
+    }
+    updateRosterAssignments();
+  });
+  $('#roster-import-rows').addEventListener('change', event => {
+    if (!event.target.matches('[data-roster-field]')) return;
+    const rowElement = event.target.closest('[data-roster-row]');
+    const row = rosterImportRows[Number(rowElement.dataset.rosterRow)];
+    row[event.target.dataset.rosterField] = event.target.value;
+    updateRosterAssignments();
+  });
+  $('#confirm-roster-import').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    const importHostel = state.hostels.find(hostel => hostel.id === $('#roster-import-hostel').value);
+    if (!window.confirm(
+      `Import ${rosterImportRows.length} residents into ${importHostel?.name || 'this hostel'}? ` +
+      'This import can only be completed once. Confirm that every row and bed preview is correct.'
+    )) return;
+    button.disabled = true;
+    $('#roster-import-error').hidden = true;
+    try {
+      const result = await apiRequest('/api/residents/roster-import', {
+        method: 'POST',
+        body: JSON.stringify({
+          hostel_id: $('#roster-import-hostel').value,
+          rows: rosterImportRows.map(row => ({
+            name: row.name.trim(),
+            room_number: row.room_number.trim(),
+            mobile: row.mobile.trim(),
+            aadhaar_last4: row.aadhaar_last4,
+            joining_date: row.joining_date,
+            payment_status: row.payment_status,
+            amount_due: row.payment_status === 'unpaid' ? Number(row.amount_due) : 0,
+          })),
+        }),
+      });
+      const hostel = state.hostels.find(item => item.id === $('#roster-import-hostel').value);
+      if (hostel) hostel.roster_imported_at = new Date().toISOString();
+      rosterImportRows = [];
+      $('#roster-import-image').value = '';
+      $('#roster-import-review').hidden = true;
+      $('#roster-import-status').textContent = `Import complete: ${result.imported_count} resident${result.imported_count === 1 ? '' : 's'} saved.`;
+      renderRosterImport();
+      try {
+        await refreshDashboard();
+        showToast(`${result.imported_count} existing resident${result.imported_count === 1 ? '' : 's'} imported.`);
+      } catch (error) {
+        showToast(`Import completed, but the dashboard did not refresh: ${error.message}`);
+      }
+    } catch (error) {
+      $('#roster-import-error').textContent = error.message;
+      $('#roster-import-error').hidden = false;
+      updateRosterAssignments();
+    }
+  });
+  $('#roster-import-rows').addEventListener('click', event => {
+    const removeButton = event.target.closest('[data-roster-remove]');
+    if (!removeButton) return;
+    rosterImportRows.splice(Number(removeButton.dataset.rosterRemove), 1);
+    renderRosterRows();
+  });
   document.addEventListener('change', event => {
     if (event.target.matches('[data-room-charge-share-selection]')) {
       const form = event.target.closest('[data-room-charges-form]');
